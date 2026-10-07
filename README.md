@@ -1,7 +1,7 @@
 # Invisible AI Assistant
 
-Windows WPF/.NET companion + Chrome/Edge Manifest V3 extension, with invisible idle operation, click-through answers, clipboard and region-capture workflows.
+Browser-first Chrome/Edge Manifest V3 assistant: select a question, **Ctrl+C → Ctrl+Shift+V**, and see a small click-through answer in the page corner. MCQs return the supplied option label; ordinary questions receive a concise answer.
 
-Choose **Gemini Web** (your own session cookies) or **Groq** (your own API key). Credentials stay in Windows Credential Manager, isolated by provider. No automatic fallback or shared app account.
+Exactly two providers: **Gemini Web**, using your own session cookies through the existing `gemini-webapi` client, and **Groq**, using your own API key. A headless, browser-launched Windows helper stores credentials in Windows Credential Manager. There is no tray app, WPF overlay, global hotkey service or screen capture.
 
-See [installation, provider setup, build and tests](InvisibleAI/README.md) and the [verification record](InvisibleAI/VERIFICATION.md). GitHub Actions publishes Windows and extension build artifacts. No credentials belong in this repository.
+See [installation, first-time setup, architecture and test instructions](InvisibleAI/README.md) and the [honest verification record](InvisibleAI/VERIFICATION.md). The self-contained installer and extension are produced by the Windows build workflow. No credentials belong in this repository.

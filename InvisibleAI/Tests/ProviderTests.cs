@@ -3,93 +3,58 @@ using System.Linq;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using System.IO.Pipes;
-using System.Windows.Threading;
-using InvisibleAI.Companion.Core;
+
+
+
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
-using InvisibleAI.Companion.AI;
-using InvisibleAI.Companion.Settings;
+using InvisibleAI.Helper.AI;
+using InvisibleAI.Helper.Settings;
 using InvisibleAI.Shared.Protocol;
 
 namespace InvisibleAI.Tests;
 
 internal static class ProviderTests
 {
-    public static async Task NativeWorkflow()
+    public static InvisibleAI.Helper.Session FixtureSession()
     {
-        var x = Create(); var directory = Path.Combine(Path.GetTempPath(), "InvisibleAI-provider-test-" + Guid.NewGuid());
-        var store = new SettingsStore(directory); var s = Config();
-        s.ClipboardShortcut = "Ctrl+Alt+Shift+F1"; s.ScreenShortcut = "Ctrl+Alt+Shift+F2";
-        s.HideShortcut = "Ctrl+Alt+Shift+F3"; s.ToggleShortcut = "Ctrl+Alt+Shift+F4"; s.ExpandShortcut = "Ctrl+Alt+Shift+F5";
-        store.Save(s);
-        using var controller = new AssistantController(Dispatcher.CurrentDispatcher, store, x.Vault, serviceOverride: x.Service);
+        // Test executable only. No simulated providers or credentials ship in the helper.
+        var x = Create(); x.Http.FixtureDelay = 500; x.Worker.FixtureDelay = 500; var store = new SettingsStore(Environment.GetEnvironmentVariable("INVISIBLEAI_TEST_PROFILE") ?? Path.Combine(AppContext.BaseDirectory, "fixture-profile"));
+        if (!File.Exists(store.Path)) { var settings = Config(); settings.ResponseSeconds = 2; store.Save(settings); }
+        return new InvisibleAI.Helper.Session(x.Service, store, x.Vault);
+    }
+    private static string UserText(string body)
+    {
+        using var json = JsonDocument.Parse(body); var content = json.RootElement.GetProperty("messages")[1].GetProperty("content");
+        return content.ValueKind == JsonValueKind.String ? content.GetString()! : content[0].GetProperty("text").GetString()!;
+    }
+    private static string FixtureAnswer(string text) => text.Contains("France") ? "C" : text.Contains("Python") ? "A" : text.Contains("A-F") ? "F" : text.Contains("one sentence") ? "Binary search repeatedly halves a sorted search range." : "O(log n)";
+    public static async Task SessionWorkflow()
+    {
+        var x = Create(); string directory = Path.Combine(Path.GetTempPath(), "InvisibleAI-session-test-" + Guid.NewGuid()); var store = new SettingsStore(directory);
+        var session = new InvisibleAI.Helper.Session(x.Service, store, x.Vault);
+        async Task<Message> Ask(string type, object? payload = null) => await session.HandleAsync(Message.Create(type, Guid.NewGuid().ToString(), payload), default);
         try
         {
-            using var vm = new SettingsViewModel(controller, x.Vault);
-            Check(vm.Model == TextModel, "Existing model not preserved.");
-            vm.Provider = Providers.Gemini; Check(vm.Model == GeminiModel, "Gemini remembered model lost.");
-            vm.Provider = Providers.Groq; Check(vm.Model == TextModel, "Groq remembered model lost.");
-            vm.PendingCredential = "synthetic-new-groq-key"; vm.SaveCommand.Execute(null);
-            Check(x.Vault.Groq.Read() == "synthetic-new-groq-key" && x.Vault.Gemini.Read() == Cookie, "Credential saved to wrong provider.");
-            x.Vault.Groq.Write(Key);
-            var window = new SettingsWindow(vm) { ShowActivated = false };
-            try
+            foreach (string provider in new[] { Providers.Groq, Providers.Gemini, Providers.Groq })
             {
-                window.Show(); await Task.Delay(80);
-                var tabs = Find<System.Windows.Controls.TabControl>(window)!; tabs.SelectedIndex = 2; await Task.Delay(60);
-                vm.Provider = Providers.Gemini; await Task.Delay(50);
-                Check(vm.Model == GeminiModel, "UI binding cleared saved model.");
-                vm.PendingCredential = Cookie; vm.ConnectCommand.Execute(null); await Task.Delay(50);
-                Check(vm.ConnectionStatus.Contains("Connected") && vm.Models.Count == 1 && vm.Model == GeminiModel, "Gemini Connect/model discovery UI failed.");
-                Render(window, "settings-gemini.png");
-                vm.Provider = Providers.Groq; await Task.Delay(50);
-                Check(vm.Model == TextModel, "UI switch cleared saved Groq model.");
-                vm.TestCommand.Execute(null); await Task.Delay(50);
-                Check(vm.ConnectionStatus.Contains("Connected") && vm.Models.Count == 3 && vm.Model == TextModel, "Groq Test/model discovery UI failed.");
-                Render(window, "settings-groq.png");
+                var response = await Ask("CONNECT", new { provider, credential = provider == Providers.Groq ? Key : Cookie, responseSeconds = 2 });
+                Safe(Json(response)); Check(response.Type == "CONNECTED", "Connect failed.");
+                Safe(Json(await Ask("PING")));
+                var result = await Ask("TEXT_INPUT", new { text = "synthetic question" }); Safe(Json(result));
+                Check(result.Payload!.Value.GetProperty("result").GetProperty("provider").GetString() == Providers.Id(provider), "Helper routing failed.");
             }
-            finally { window.Close(); }
-            await Task.Run(async () =>
-            {
-                using var pipe = new NamedPipeClientStream(".", Identity.PipeName, PipeDirection.InOut, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
-                using var timeout = new CancellationTokenSource(8000); await pipe.ConnectAsync(timeout.Token);
-                async Task<Message> Ask(string type, object payload)
-                {
-                    string id = Guid.NewGuid().ToString(); await Framing.WriteAsync(pipe, Message.Create(type, id, payload), timeout.Token);
-                    Message response;
-                    do { response = (await Framing.ReadAsync(pipe, timeout.Token))!; } while (response.Type == "PROCESSING_START");
-                    Safe(Json(response)); return response;
-                }
-                foreach (string provider in new[] { Providers.Gemini, Providers.Groq, Providers.Gemini })
-                {
-                    Check((await Ask("SETTINGS_UPDATE", new { provider })).Type == "SETTINGS_UPDATE", "Native provider change rejected.");
-                    var connection = await Ask("PROVIDER_API", new { method = "POST", path = $"/api/ai/providers/{Providers.Id(provider)}/test" });
-                    Check(connection.Type == "PROVIDER_RESULT" && connection.Payload!.Value.GetProperty("connected").GetBoolean(), "Native test route failed.");
-                    var answer = await Ask("TEXT_INPUT", new { text = "synthetic question" });
-                    Check(answer.Payload!.Value.GetProperty("result").GetProperty("provider").GetString() == Providers.Id(provider), "Native generation used wrong provider.");
-                }
-                Check((await Ask("PROVIDER_API", new { method = "POST", path = "/api/ai/providers/gemini/test", userId = "user-b" })).Type == "ERROR", "Client user override accepted.");
-                Check((await Ask("PROVIDER_API", new { method = "POST", path = "/api/ai/providers/gemini/test", cookies = "rejected-field" })).Type == "ERROR", "Browser cookie injection accepted.");
-                Check((await Ask("SETTINGS_UPDATE", new { apiKey = "rejected-field" })).Type == "ERROR", "Browser key injection accepted.");
-            });
+            await Rejected(() => Ask("CONNECT", new { provider = Providers.Groq, userId = "user-b" }));
+            await Rejected(() => Ask("PING", new { credential = "request-read" }));
+            await Rejected(() => Ask("TEXT_INPUT", new { text = "question", provider = Providers.Gemini }));
+            await Ask("SETTINGS_UPDATE", new { networkEnabled = false, clipboardEnabled = false });
+            Check(!store.Load().NetworkEnabled && !store.Load().ClipboardEnabled, "Privacy preferences lost.");
+            await Rejected(() => Ask("TEXT_INPUT", new { text = "private" }));
+            await Rejected(() => Ask("SETTINGS_UPDATE", new { userId = "user-b" }));
+            Safe(File.ReadAllText(store.Path));
         }
-        finally { controller.Dispose(); File.Delete(store.Path); Directory.Delete(directory); }
-    }
-    private static T? Find<T>(System.Windows.DependencyObject root) where T : System.Windows.DependencyObject
-    {
-        if (root is T found) return found;
-        for (int i = 0; i < System.Windows.Media.VisualTreeHelper.GetChildrenCount(root); i++)
-            if (Find<T>(System.Windows.Media.VisualTreeHelper.GetChild(root, i)) is T child) return child;
-        return null;
-    }
-    private static void Render(System.Windows.Window window, string name)
-    {
-        string path = Path.Combine(Environment.CurrentDirectory, "InvisibleAI", "artifacts", "qa"); Directory.CreateDirectory(path);
-        var bitmap = new System.Windows.Media.Imaging.RenderTargetBitmap((int)window.ActualWidth, (int)window.ActualHeight, 96, 96, System.Windows.Media.PixelFormats.Pbgra32);
-        bitmap.Render(window); var encoder = new System.Windows.Media.Imaging.PngBitmapEncoder(); encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(bitmap));
-        using var file = File.Create(Path.Combine(path, name)); encoder.Save(file);
+        finally { Directory.Delete(directory, true); }
     }
     public static readonly (string Name, Func<Task> Run)[] All = [
         ("Providers: explicit selection switches both directions with isolated credentials", Switching),
@@ -112,7 +77,7 @@ internal static class ProviderTests
     private const string VisionModel = "account-vision-model";
     private const string GeminiModel = "gemini-account-model";
     private static void Check(bool ok, string message) { if (!ok) throw new Exception(message); }
-    private static AppSettings Config(string provider = Providers.Groq, string model = TextModel) => new() { Provider = provider, Model = model, GroqModel = TextModel, GeminiModel = GeminiModel };
+    private static AppSettings Config(string provider = Providers.Groq, string model = TextModel) => new() { Provider = provider, Model = model, GroqModel = TextModel, GeminiModel = GeminiModel, ScreenshotEnabled = true };
     private static string Json(object value) => JsonSerializer.Serialize(value, Message.Json);
     private static void Safe(string output) => Check(!output.Contains(Key) && !output.Contains(Sid) && !output.Contains("synthetic-ts-sentinel"), "Credential sentinel exposed.");
     private static async Task<string> Rejected(Func<Task> action)
@@ -234,7 +199,7 @@ internal static class ProviderTests
             await Rejected(() => api.InvokeAsync("POST", path, Config(), default));
         // Actual multi-account isolation is provided by Windows CurrentUserOnly and CredRead;
         // there is no client-supplied user identity or credential-target field in this API.
-        Check(InvisibleAI.Shared.Protocol.Identity.PipeName.Contains("InvisibleAI"), "User-scoped identity missing.");
+        Check(ExtensionIdentity.Origin.StartsWith("chrome-extension://"), "Extension origin missing.");
         bool rejected = false; try { new ProviderCredentials().For("user-b/gemini"); } catch (AIProviderException) { rejected = true; }
         Check(rejected, "Arbitrary credential target accepted.");
     }
@@ -271,13 +236,13 @@ internal static class ProviderTests
     { public int Reads; public string? Read() { Reads++; return value; } public void Write(string secret) => value = secret; public void Delete() => value = null; }
     private sealed class Worker : IGeminiWorker
     {
-        public int Calls; public string? Request, Code; public bool Echo;
-        public Task<JsonDocument> InvokeAsync(object request, AppSettings settings, CancellationToken ct)
-        { ct.ThrowIfCancellationRequested(); Calls++; Request = Json(request); return Task.FromResult(JsonDocument.Parse(Code is not null ? Json(new { errorCode = Code, raw = Cookie }) : Request.Contains("\"models\"") ? Json(new { models = new[] { new { id = GeminiModel, name = "Account Gemini" } } }) : Json(new { content = Echo ? Cookie : "O(log n)" }))); }
+        public int Calls; public int FixtureDelay; public string? Request, Code; public bool Echo;
+        public async Task<JsonDocument> InvokeAsync(object request, AppSettings settings, CancellationToken ct)
+        { ct.ThrowIfCancellationRequested(); Calls++; Request = Json(request); if (FixtureDelay > 0 && !Request.Contains("\"models\"")) await Task.Delay(FixtureDelay, ct); return JsonDocument.Parse(Code is not null ? Json(new { errorCode = Code, raw = Cookie }) : Request.Contains("\"models\"") ? Json(new { models = new[] { new { id = GeminiModel, name = "Account Gemini" } } }) : Json(new { content = Echo ? Cookie : FixtureAnswer(JsonDocument.Parse(Request).RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!) })); }
     }
     private sealed class Transport : HttpMessageHandler
     {
-        public int Calls; public string? Body, Url, Auth; public bool Wait, Echo;
+        public int Calls; public int FixtureDelay; public string? Body, Url, Auth; public bool Wait, Echo;
         public HttpStatusCode Status = HttpStatusCode.OK;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -285,8 +250,8 @@ internal static class ProviderTests
             Check(!Auth!.Contains(Sid) && !Url.Contains(Key), "Credential mixed or placed in URL.");
             if (Wait) await Task.Delay(Timeout.Infinite, ct);
             Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
-            if (Body is not null) Safe(Body);
-            string response = Status != HttpStatusCode.OK ? Key + Cookie : request.Method == HttpMethod.Get ? Json(new { data = new[] { new { id = TextModel, active = true, supports_vision = false }, new { id = VisionModel, active = true, supports_vision = true }, new { id = "openai/gpt-oss-20b", active = true, supports_vision = false } } }) : Json(new { choices = new[] { new { message = new { content = Echo ? Key : "O(log n)" }, finish_reason = "stop" } }, usage = new { prompt_tokens = 1, completion_tokens = 2, total_tokens = 3 } });
+            if (Body is not null) { Safe(Body); if (FixtureDelay > 0) await Task.Delay(FixtureDelay, ct); }
+            string response = Status != HttpStatusCode.OK ? Key + Cookie : request.Method == HttpMethod.Get ? Json(new { data = new[] { new { id = TextModel, active = true, supports_vision = false }, new { id = VisionModel, active = true, supports_vision = true }, new { id = "openai/gpt-oss-20b", active = true, supports_vision = false } } }) : Json(new { choices = new[] { new { message = new { content = Echo ? Key : FixtureAnswer(UserText(Body!)) }, finish_reason = "stop" } }, usage = new { prompt_tokens = 1, completion_tokens = 2, total_tokens = 3 } });
             return new HttpResponseMessage(Status) { Content = new StringContent(response) };
         }
     }

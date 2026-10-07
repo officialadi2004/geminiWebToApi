@@ -1,6 +1,1 @@
-<Solution>
- <Project Path="Shared/InvisibleAI.Shared.csproj" />
- <Project Path="WindowsCompanion/InvisibleAI.Companion.csproj" />
- <Project Path="WindowsCompanion/NativeMessaging/Host/InvisibleAI.NativeHost.csproj" />
- <Project Path="Tests/InvisibleAI.Tests.csproj" />
-</Solution>
+<Solution><Project Path="Shared/InvisibleAI.Shared.csproj" /><Project Path="LocalHelper/InvisibleAI.Helper.csproj" /><Project Path="Tests/InvisibleAI.Tests.csproj" /><Project Path="Installer/InvisibleAI.Setup.csproj" /></Solution>

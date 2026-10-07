@@ -16,7 +16,7 @@ from gemini_webapi.constants import AccountStatus
 from gemini_webapi.exceptions import AuthError, ModelInvalidError
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKER = ROOT / "WindowsCompanion/AI/GeminiWeb/worker.py"
+WORKER = ROOT / "LocalHelper/AI/GeminiWeb/worker.py"
 spec = importlib.util.spec_from_file_location("worker", WORKER)
 worker = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(worker)

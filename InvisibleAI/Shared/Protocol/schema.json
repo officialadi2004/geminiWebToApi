@@ -1,18 +1,75 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Invisible AI protocol v1",
-  "type": "object", "additionalProperties": false,
-  "required": ["version", "type", "id"],
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "type",
+    "id"
+  ],
   "properties": {
-    "version": { "const": 1 },
-    "id": { "type": "string", "minLength": 1, "maxLength": 128 },
-    "type": { "enum": ["TEXT_INPUT", "SCREENSHOT_INPUT", "PROCESSING_START", "PROCESSING_COMPLETE", "ERROR", "SETTINGS_UPDATE", "PING", "OPEN_SETTINGS", "PROVIDER_API", "PROVIDER_RESULT"] },
-    "payload": { "type": ["object", "null"] }
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "type": {
+      "enum": [
+        "TEXT_INPUT",
+        "PROCESSING_START",
+        "PROCESSING_COMPLETE",
+        "ERROR",
+        "SETTINGS_UPDATE",
+        "PING",
+        "STATUS",
+        "CONNECT",
+        "CONNECTED",
+        "CANCEL",
+        "PROVIDER_API",
+        "PROVIDER_RESULT"
+      ]
+    },
+    "payload": {
+      "type": [
+        "object",
+        "null"
+      ]
+    }
   },
   "allOf": [
-    { "if": { "properties": { "type": { "const": "TEXT_INPUT" } } },
-      "then": { "required": ["payload"], "properties": { "payload": { "type": "object", "required": ["text"], "properties": { "text": { "type": "string", "minLength": 1, "maxLength": 50000 } } } } } },
-    { "if": { "properties": { "type": { "const": "SCREENSHOT_INPUT" } } },
-      "then": { "required": ["payload"], "properties": { "payload": { "type": "object", "required": ["imageBase64"], "properties": { "imageBase64": { "type": "string", "contentEncoding": "base64", "contentMediaType": "image/png" } } } } } }
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "TEXT_INPUT"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "text"
+            ],
+            "properties": {
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 50000
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    }
   ]
 }

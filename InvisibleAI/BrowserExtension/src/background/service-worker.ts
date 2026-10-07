@@ -1,95 +1,112 @@
-import { HOST, wire, validEnvelope, type Status } from "../protocol.js";
+import { HOST, wire, validEnvelope, type WireMessage } from "../protocol.js";
 
 let port: chrome.runtime.Port | undefined;
-let status: Status = { connected: false, processing: false };
-const pending = new Map<string, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
-
-function disconnect(message: string): void {
-  port = undefined; status = { connected: false, processing: false, error: message };
-  for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error(message)); }
-  pending.clear();
-}
+const pending = new Map<string, { resolve: (v: Record<string, unknown>) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+const active = new Map<number, string>();
+const helperError = "Install Invisible AI Setup, then reopen the browser.";
 function connect(): chrome.runtime.Port {
   if (port) return port;
-  const current = chrome.runtime.connectNative(HOST);
-  port = current;
+  const current = chrome.runtime.connectNative(HOST); port = current;
   current.onDisconnect.addListener(() => {
-    const message = chrome.runtime.lastError?.message ?? "Windows companion disconnected.";
-    disconnect(message);
+    void chrome.runtime.lastError; port = undefined;
+    for (const item of pending.values()) { clearTimeout(item.timer); item.reject(new Error(helperError)); }
+    pending.clear();
   });
   current.onMessage.addListener((raw: unknown) => {
-    if (!validEnvelope(raw)) { current.disconnect(); disconnect("Invalid companion response."); return; }
-    const m = raw;
-    if (m.id === "connection" && m.type === "ERROR") { current.disconnect(); disconnect(String(m.payload?.message ?? "Native connection failed.")); return; }
-    status.connected = true; status.error = undefined;
-    if (m.type === "PROCESSING_START") { status.processing = true; return; }
-    if (m.type === "PROCESSING_COMPLETE") status.processing = false;
-    if (m.type === "ERROR") { status.processing = false; status.error = String(m.payload?.message ?? "AI request failed."); }
-    if (m.type === "SETTINGS_UPDATE") {
-      if (typeof m.payload?.enabled === "boolean") status.enabled = m.payload.enabled;
-      if (typeof m.payload?.model === "string") status.model = m.payload.model;
-    }
-    const waiting = pending.get(m.id);
-    if (waiting) {
-      clearTimeout(waiting.timer); pending.delete(m.id);
-      if (m.type === "ERROR") waiting.reject(new Error(status.error));
-      else waiting.resolve(m.payload ?? {});
-    }
+    if (!validEnvelope(raw)) { current.disconnect(); return; }
+    if (raw.type === "PROCESSING_START") return;
+    const item = pending.get(raw.id); if (!item) return;
+    clearTimeout(item.timer); pending.delete(raw.id);
+    if (raw.type === "ERROR") item.reject(new Error(String(raw.payload?.message ?? "Could not connect to AI provider.")));
+    else item.resolve(raw.payload ?? {});
   });
   return current;
 }
-async function send(type: string, payload?: Record<string, unknown>): Promise<unknown> {
-  const m = wire(type, payload);
-  const p = connect();
+function send(m: WireMessage): Promise<Record<string, unknown>> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { pending.delete(m.id); status.processing = false; reject(new Error("Companion timed out. Check the tray application.")); }, type === "PING" ? 15000 : 315000);
+    const timer = setTimeout(() => { pending.delete(m.id); cancel(m.id); reject(new Error("AI request timed out.")); }, 305000);
     pending.set(m.id, { resolve, reject, timer });
-    try { p.postMessage(m); } catch { clearTimeout(timer); pending.delete(m.id); reject(new Error("Could not reach the Windows companion.")); }
+    try { connect().postMessage(m); } catch { clearTimeout(timer); pending.delete(m.id); reject(new Error(helperError)); }
   });
 }
-async function selectedText(): Promise<string> {
-  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  if (!tab?.id || !tab.url || !/^https?:\/\//.test(tab.url)) throw new Error("Select text on an ordinary webpage. Browser-internal pages are restricted; use the clipboard shortcut instead.");
-  try {
-    const results = await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["src/content/selection.js"] });
-    const text = String(results[0]?.result ?? "").trim();
-    if (!text) throw new Error("Select text on the page first.");
-    if (text.length > 50000) throw new Error("Select less text (maximum 50,000 characters).");
-    return text;
-  } catch (error) { throw error instanceof Error ? error : new Error("The page blocked selection access. Use the clipboard shortcut."); }
+function cancel(id: string): void {
+  try { port?.postMessage(wire("CANCEL", { targetId: id })); } catch { /* Already disconnected. */ }
 }
-chrome.runtime.onInstalled.addListener(() => {
-  chrome.contextMenus.removeAll(() => chrome.contextMenus.create({ id: "ask-selection", title: "Ask Invisible AI about selection", contexts: ["selection"], documentUrlPatterns: ["http://*/*", "https://*/*"] }));
+let creating: Promise<void> | undefined;
+async function clipboard(): Promise<string> {
+  const url = chrome.runtime.getURL("src/offscreen/index.html");
+  const contexts = await chrome.runtime.getContexts({ contextTypes: [chrome.runtime.ContextType.OFFSCREEN_DOCUMENT], documentUrls: [url] });
+  if (!contexts.length) {
+    creating ??= chrome.offscreen.createDocument({ url: "src/offscreen/index.html", reasons: [chrome.offscreen.Reason.CLIPBOARD], justification: "Read copied text only after the explicit AI shortcut." }).finally(() => { creating = undefined; });
+    await creating;
+  }
+  const result = await chrome.runtime.sendMessage({ target: "clipboard", action: "read" });
+  if (!result?.ok) throw new Error("Could not read clipboard text. Copy the question again.");
+  if (typeof result.text !== "string" || !result.text.trim()) throw new Error("Clipboard has no plain text. Copy a question first.");
+  if (result.text.length > 50000) throw new Error("Question too long (maximum 50,000 characters).");
+  return result.text;
+}
+async function display(tabId: number, id: string, state: string, text = "", seconds = 12): Promise<void> {
+  await chrome.tabs.sendMessage(tabId, { target: "overlay", id, state, text, seconds });
+}
+const recent = new Map<number, number>();
+async function ask(selectedTab?: chrome.tabs.Tab): Promise<void> {
+  const tab = selectedTab ?? (await chrome.tabs.query({ active: true, currentWindow: true }))[0];
+  if (!tab?.id) return;
+  const tabId = tab.id, id = crypto.randomUUID();
+  const now = Date.now(); if (now - (recent.get(tabId) ?? 0) < 200) return;
+  recent.set(tabId, now);
+  const previous = active.get(tabId); if (previous) cancel(previous);
+  active.set(tabId, id);
+  try {
+    // Command invocation grants activeTab. Nothing is injected or read at idle.
+    if (!selectedTab) await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/overlay.js"] });
+    await display(tabId, id, "processing");
+    const text = await clipboard();
+    if (active.get(tabId) !== id) return;
+    const data = await send({ version: 1, type: "TEXT_INPUT", id, payload: { text } });
+    if (active.get(tabId) !== id) return;
+    const result = data.result as { content?: string } | undefined;
+    await display(tabId, id, "answer", String(result?.content ?? "No answer received."), Number(data.responseSeconds ?? 12));
+  } catch (error) {
+    if (active.get(tabId) !== id) return;
+    // Restricted pages cannot receive UI; action badge provides a small indication.
+    try { await display(tabId, id, "error", error instanceof Error ? error.message : "Could not connect to AI provider."); }
+    catch { await chrome.action.setBadgeText({ tabId, text: "!" }); await chrome.action.setTitle({ tabId, title: "Invisible AI: use an ordinary webpage; this page cannot display extension UI." }); }
+  }
+}
+chrome.commands.onCommand.addListener(command => {
+  if (command === "ask-clipboard") void ask();
+  else if (command === "hide-answer") void (async () => {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id) return;
+    const id = active.get(tab.id); if (id) { cancel(id); active.delete(tab.id); }
+    try { await display(tab.id, id ?? "", "hide"); } catch { /* No overlay on this page. */ }
+  })();
 });
-chrome.contextMenus.onClicked.addListener((info) => {
-  if (info.menuItemId !== "ask-selection" || !info.selectionText) return;
-  const text = info.selectionText.trim();
-  if (text.length > 50000) { status.error = "Select less text (maximum 50,000 characters)."; return; }
-  void send("TEXT_INPUT", { text }).catch(error => { status.error = String(error.message); });
-});
+chrome.tabs.onRemoved.addListener(tabId => { const id = active.get(tabId); if (id) cancel(id); active.delete(tabId); recent.delete(tabId); });
 chrome.runtime.onMessage.addListener((request: unknown, sender, reply) => {
-  // No content-script message listener or externally_connectable surface. Only our extension UI can invoke actions.
-  if (sender.id !== chrome.runtime.id || !sender.url?.startsWith(chrome.runtime.getURL("src/")) || !request || typeof request !== "object") return false;
-  const action = (request as { action?: string }).action;
-  if (action === "status") { reply({ ok: true, data: status }); return false; }
-  void (async () => {
-    switch (action) {
-      case "connect": return send("PING");
-      case "ask-selection": return send("TEXT_INPUT", { text: await selectedText() });
-      case "open-settings": return send("OPEN_SETTINGS");
-      case "save-settings": {
-        const values = (request as { values?: Record<string, unknown> }).values;
-        if (!values || !["SHORT", "CONCISE", "DETAILED"].includes(String(values.responseMode)) || typeof values.webSearch !== "boolean") throw new Error("Invalid settings.");
-        if (values.provider !== undefined && !["Gemini Web", "Groq"].includes(String(values.provider))) throw new Error("Choose Gemini Web or Groq.");
-        return send("SETTINGS_UPDATE", { responseMode: values.responseMode, webSearch: values.webSearch, ...(values.provider ? { provider: values.provider } : {}) });
-      }
-      case "test-provider": {
-        const selected = (request as { values?: Record<string, unknown> }).values?.provider;
-        if (selected !== "Gemini Web" && selected !== "Groq") throw new Error("Choose Gemini Web or Groq.");
-        return send("PROVIDER_API", { method: "POST", path: `/api/ai/providers/${selected === "Groq" ? "groq" : "gemini"}/test` });
-      }
-      default: throw new Error("Unknown action.");
-    }
-  })().then(data => reply({ ok: true, data })).catch((error: Error) => reply({ ok: false, error: error.message }));
+  if (sender.id === chrome.runtime.id && sender.frameId === 0 && sender.tab?.id && /^https?:\/\//.test(sender.url ?? "") && (request as { action?: string })?.action === "ask-clipboard") {
+    void ask(sender.tab); return false;
+  }
+  if (sender.id !== chrome.runtime.id || !sender.url || !["src/settings/index.html", "src/popup/index.html"].some(path => sender.url === chrome.runtime.getURL(path))) return false;
+  if (!request || typeof request !== "object") return false;
+  const r = request as { action?: string; values?: Record<string, unknown> };
+  let response: Promise<Record<string, unknown>>;
+  if (r.action === "status") response = send(wire("PING"));
+  else if (r.action === "privacy") {
+    const values = r.values;
+    if (!values || Object.keys(values).some(k => !["enabled", "clipboardEnabled", "networkEnabled", "responseSeconds"].includes(k))) { reply({ ok: false, error: "Invalid privacy settings." }); return false; }
+    for (const [tabId, id] of active) { cancel(id); void display(tabId, id, "hide").catch(() => {}); }
+    active.clear(); response = send(wire("SETTINGS_UPDATE", values));
+  }
+  else if (r.action === "save") {
+    const v = r.values;
+    if (!v || !["Gemini Web", "Groq"].includes(String(v.provider)) || Object.keys(v).some(k => !["provider", "credential", "model", "responseSeconds"].includes(k))) { reply({ ok: false, error: "Invalid provider settings." }); return false; }
+    // Switching configuration cancels pending generations; never route to a fallback.
+    for (const [tabId, id] of active) { cancel(id); void display(tabId, id, "hide").catch(() => { /* Tab navigated. */ }); }
+    active.clear(); response = send(wire("CONNECT", v));
+  } else return false;
+  void response.then(data => reply({ ok: true, data })).catch((e: Error) => reply({ ok: false, error: e.message }));
   return true;
 });

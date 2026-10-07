@@ -1,10 +1,49 @@
 {
   "manifest_version": 3,
   "name": "Invisible AI Assistant",
-  "version": "1.0.0",
-  "description": "Explicit selection-to-AI actions with a tiny Windows companion indicator. No page overlays or background capture.",
-  "permissions": ["nativeMessaging", "activeTab", "scripting", "contextMenus"],
-  "background": { "service_worker": "src/background/service-worker.js", "type": "module" },
-  "action": { "default_popup": "src/popup/index.html", "default_title": "Invisible AI Assistant" },
-  "options_ui": { "page": "src/settings/index.html", "open_in_tab": true }
+  "version": "2.0.0",
+  "minimum_chrome_version": "116",
+  "description": "Copy a question, press Ctrl+Shift+V, and see a tiny answer inside your current page.",
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvKYUUKlnoi10ri7mU84qass26uUZJZOAvm6XhVDaWY+NQsB0ANf0IqEFDhE54C5aRvfrVD67iTxBWrKtzDtOpBpX9DtE9faSQY0pHzzFF9cz4PXhjs5PDLbwPe2zRSylKIif3D2NqmaPoR/hrhcjoHTnWzHYSEYKnsAkDVDrvhkpviQB4HQ7hr+BtPVHlXXAAByFtFrTxispZbK8Ji8bMZdMr/CFM2NsxbAYwwKF3Ee0qUoVv62Y0KawtAKwZFijuwFFt2c6U0O5zMeKo5vPHfZU3PcVC72ptoFTi+3TxaKQhuhnGvTdX9lC3/LGOwVFjEhHdulBjXaCgfeYThYl8QIDAQAB",
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "nativeMessaging",
+    "clipboardRead",
+    "offscreen"
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup/index.html"
+  },
+  "options_page": "src/settings/index.html",
+  "commands": {
+    "ask-clipboard": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+V"
+      },
+      "description": "Answer the copied question"
+    },
+    "hide-answer": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+H"
+      },
+      "description": "Hide the answer"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "src/content/overlay.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
 }

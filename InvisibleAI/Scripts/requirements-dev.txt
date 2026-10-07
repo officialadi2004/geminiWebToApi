@@ -1,1 +1,2 @@
 ruff==0.16.10
+pyinstaller==6.19.0

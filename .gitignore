@@ -26,3 +26,9 @@ InvisibleAI/artifacts/
 *.secret
 InvisibleAI/BrowserExtension/dist/
 !**/.env.example
+
+**/fixture-profile/
+**/GeminiWorker/
+**/*.spec
+**/playwright-report/
+**/test-results/

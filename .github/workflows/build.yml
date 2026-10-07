@@ -1,4 +1,4 @@
-name: Windows companion and MV3 extension
+name: Browser extension and minimal provider helper
 on: [push, pull_request]
 permissions:
   contents: read
@@ -19,8 +19,8 @@ jobs:
         with:
           python-version: '3.11'
       - name: Install Gemini and lint dependencies (no credentials)
-        run: python -m pip install -r InvisibleAI/WindowsCompanion/AI/GeminiWeb/requirements.txt -r InvisibleAI/Scripts/requirements-dev.txt
-      - name: Lint, type check, independent provider tests and desktop subsystems
+        run: python -m pip install -r InvisibleAI/LocalHelper/AI/GeminiWeb/requirements.txt -r InvisibleAI/Scripts/requirements-dev.txt
+      - name: Lint, type check, independent provider tests and helper subsystems
         shell: pwsh
         run: ./InvisibleAI/Scripts/Build.ps1
       - name: Publish production package
@@ -31,7 +31,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: InvisibleAI-windows-x64
-          path: InvisibleAI/artifacts/win-x64/
+          path: InvisibleAI/artifacts/browser-first-release/
       - uses: actions/upload-artifact@v4
         with:
           name: InvisibleAI-chrome-edge
