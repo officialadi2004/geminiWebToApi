@@ -14,6 +14,7 @@ internal static class UpgradeTests
         ("Answers: A-Z, multiple labels, ambiguity and code options", Labels),
         ("Answers: structured image MCQ, True/False, multiple labels, code and unreadable", Images),
         ("Answers: Detailed explanations, Quick suppression and code whitespace", Details),
+        ("Answers: unlabeled webpage choices, lowercase labels and positional image choices", Unlabeled),
         ("Preferences: 22-second default, custom duration, privacy-preserving migration", Preferences),
         ("Images: PNG format, dimensions and allocation limits", Limits)
     ];
@@ -57,6 +58,28 @@ internal static class UpgradeTests
         string code = "```python\ns = input(\"String: \")\n\tprint(s[::-1])\n```";
         Check(Process("Write code", new { kind = "code", content = code }).Text == code);
         Check(AIInstructions.Build(new() { ProgrammingLanguage = "C++", ResponseMode = ResponseMode.DETAILED }).Contains("Language: C++"));
+        return Task.CompletedTask;
+    }
+    private static Task Unlabeled()
+    {
+        string question = "Which is the largest planet in our solar system?\nEarth\nJupiter\nSaturn\nMars";
+        var correct = new { kind = "mcq", options = new[] { "A", "B", "C", "D" }, answers = new[] { "B" } };
+        Check(Process(question, correct).Text == "B");
+        Check(Process(question + "\nAnswer: b) Jupiter", correct).Text == "B");
+        Check(AnswerPolicy.Normalize(question, "Answer: b) Jupiter") == "B");
+        Check(AnswerPolicy.Normalize("Which planet?\n(a) Earth\n(b) Jupiter\n(c) Saturn\n(d) Mars", "b") == "B");
+        Check(AnswerPolicy.Normalize("Which planet?\na. Earth\nb. Jupiter\nc. Saturn\nd. Mars", "b") == "B");
+        Check(Process("Select all programming languages.\nPython\nPhotoshop\nJava\nC++\nExcel", new { kind = "mcq", answers = new[] { "D", "A", "C" } }).Text == "A, C, D");
+        Check(Process("Python is dynamically typed.\nOptions:\nTrue\nFalse", new { kind = "mcq", answers = new[] { "A" } }).Text == "A");
+        Check(Process("Python is dynamically typed.\nTrue\nFalse", new { kind = "mcq", answers = new[] { "A" } }).Text == "A");
+        Check(Process(question, new { kind = "mcq", answers = new[] { "Z" } }).Text == "Uncertain");
+        Check(Process(question, new { kind = "mcq", answers = new[] { " b " } }).Text == "B");
+        Check(Process(null, correct, true).Text == "B");
+        Check(Process(null, new { kind = "mcq", options = new[] { "a", "b" }, answers = new[] { "b" } }, true).Text == "B");
+        Check(Process("How do these differ?\nTCP\nUDP", new { kind = "answer", content = "TCP is reliable; UDP has lower overhead." }).Text == "TCP is reliable; UDP has lower overhead.");
+        Check(AnswerPolicy.Labels("Compare these protocols:\nTCP\nUDP").Length == 0);
+        Check(AnswerPolicy.Labels("Explain this code?\n```java\nfoo();\nbar();\n```").Length == 0);
+        Check(AIInstructions.Build(new()).Contains("choices in images"));
         return Task.CompletedTask;
     }
     private static Task Preferences()

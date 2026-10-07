@@ -52,6 +52,7 @@ Gemini Web continues to use the existing `gemini-webapi` Web2API integration and
 
 - Single MCQ, A–F, A–Z and labeled True/False: **only labels**, e.g. `C` or `B`.
 - Multiple-correct questions: `A, C, D`, sorted in original question order. Unknown labels or ambiguous output become **Uncertain**.
+- Choices copied without letters on separate lines are assigned A–Z in displayed order. For example `Earth / Jupiter / Saturn / Mars` below the planet question gives **B**, not Uncertain. Lowercase labels such as `b)` are accepted and displayed uppercase. Image prompts use the same positional rule when choices have no visible labels.
 - Quick normal questions: one concise direct answer.
 - Detailed MCQs: the label stays compact; the explanation appears only on hover. Detailed normal questions: focused explanation, compact preview with hover for longer content.
 - Programming requests: fenced code in the chosen/inferred language, rendered as code with Copy. Code plus answer options is still an MCQ.
