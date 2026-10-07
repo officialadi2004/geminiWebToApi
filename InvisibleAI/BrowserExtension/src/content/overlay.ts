@@ -36,7 +36,7 @@
     host.style.cssText = "all:initial!important;position:fixed!important;right:20px!important;bottom:20px!important;z-index:2147483647!important;pointer-events:none!important;max-width:calc(100vw - 40px)!important;";
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
-    style.textContent = `:host{pointer-events:none}*{box-sizing:border-box} .card{font:12px/1.4 'Segoe UI',sans-serif;color:#727985;opacity:var(--answer-opacity,.55);background:none;border:0;border-radius:0;box-shadow:none;max-width:min(300px,calc(100vw - 40px));pointer-events:auto;cursor:default} .summary{padding:1px 2px;overflow-wrap:anywhere;white-space:pre-wrap;max-height:70px;overflow:hidden} .mcq .summary{font-size:14px;text-align:center;min-width:12px} .body{display:none;white-space:pre-wrap;overflow-wrap:anywhere;padding:4px 2px;max-height:min(420px,calc(100vh - 60px));overflow:auto} .expanded{max-width:min(480px,calc(100vw - 40px))} .expanded .body{display:block} .text{margin:0 0 6px} .code{position:relative;margin:6px 0;border:0;background:none} .code-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0;color:inherit;font-size:11px} pre{margin:0;padding:2px 0;overflow:auto;white-space:pre;font:12px/1.5 Consolas,monospace;color:inherit} button{font:11px 'Segoe UI',sans-serif;color:inherit;background:none;border:0;padding:2px 4px;cursor:pointer} .processing{padding:0;width:6px;height:6px;border:0;box-shadow:none;border-radius:50%;background:#2aa881;animation:pulse 1s ease-in-out infinite;pointer-events:none} @keyframes pulse{50%{opacity:.15}} @media(prefers-reduced-motion:reduce){.processing{animation:none}}`;
+    style.textContent = `:host{pointer-events:none}*{box-sizing:border-box} .card{font:12px/1.4 'Segoe UI',sans-serif;color:#727985;opacity:var(--answer-opacity,.55);background:none;border:0;border-radius:0;box-shadow:none;max-width:min(180px,calc(100vw - 40px));pointer-events:auto;cursor:default} .summary{font-size:10px;line-height:1.3;padding:1px 2px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden} .mcq .summary{text-align:center;min-width:12px} .body{display:none;white-space:pre-wrap;overflow-wrap:anywhere;padding:4px 2px;max-height:min(420px,calc(100vh - 60px));overflow:auto} .expanded{max-width:min(480px,calc(100vw - 40px))} .expanded .summary{font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere} .expanded.mcq .summary{font-size:14px} .expanded .body{display:block} .text{margin:0 0 6px} .code{position:relative;margin:6px 0;border:0;background:none} .code-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0;color:inherit;font-size:11px} pre{margin:0;padding:2px 0;overflow:auto;white-space:pre;font:12px/1.5 Consolas,monospace;color:inherit} button{font:11px 'Segoe UI',sans-serif;color:inherit;background:none;border:0;padding:2px 4px;cursor:pointer} .processing{padding:0;width:6px;height:6px;border:0;box-shadow:none;border-radius:50%;background:#2aa881;animation:pulse 1s ease-in-out infinite;pointer-events:none} @keyframes pulse{50%{opacity:.15}} @media(prefers-reduced-motion:reduce){.processing{animation:none}}`;
     card = document.createElement("div"); card.className = "card"; card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite");
     const mountedCard = card;
     card.addEventListener("mouseenter", () => { if (card !== mountedCard || card.classList.contains("processing")) return; pauseExpiry(); if (card.classList.contains("expandable")) card.classList.add("expanded"); });
@@ -75,10 +75,11 @@
     const body = document.createElement("div"); body.className = "body";
     const code = details(body, explanation || text);
     const mcq = /^[A-Z](?:, [A-Z])*$/.test(text);
-    summary.textContent = mcq ? text : code ? "Code · hover to view" : text.length > 140 ? text.slice(0, 137) + "…" : text;
+    const preview = text.replace(/\s+/g, " ").trim();
+    summary.textContent = mcq ? text : code ? "Code" : preview.length > 40 ? preview.slice(0, 39) + "…" : preview;
     card!.append(summary);
     if (mcq) card!.classList.add("mcq");
-    if (explanation || code || text.length > 140) {
+    if (explanation || code || preview !== text || preview.length > 40 || summary.scrollWidth > summary.clientWidth) {
       card!.append(body); card!.classList.add("expandable");
     }
   }

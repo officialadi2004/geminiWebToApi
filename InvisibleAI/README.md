@@ -6,7 +6,7 @@ Daily use:
 - **Image:** Ctrl+Shift+S → drag around the question → release. Escape or right-click cancels.
 - **Result:** a six-pixel pulsing dot becomes a compact answer, 20 CSS pixels from the bottom-right. It disappears after **22 seconds** by default. Ctrl+Shift+H hides it.
 - **Hover:** any answer pauses its disappearance timer while hovered; moving away resumes the remaining time. Long answers expand on hover and collapse on leave. Each complete generated code block has a **Copy** button, which copies only code with its original indentation, quotes, tabs and line breaks.
-- **Appearance:** small gray text at 55% opacity by default, without panel backgrounds, borders or shadows. Details, code and Copy use the same subtle style.
+- **Appearance:** the collapsed answer uses 10px gray text on one line, at most 180px wide. Normal-answer previews are limited to 40 characters; code shows just `Code`. Hover reveals the complete answer at the existing readable size. Default opacity is 55%, without panel backgrounds, borders or shadows. Details, code and Copy use the same subtle style.
 
 Nothing is drawn at idle. Ordinary Ctrl+C/V/X/Z remain untouched. The text shortcut reads the clipboard only on explicit invocation; there is no clipboard history or page/screen monitoring.
 

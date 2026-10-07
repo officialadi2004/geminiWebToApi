@@ -15,7 +15,7 @@ export async function run({page,worker,session,extensionContexts,connect,prepare
  await hide();await connect("Groq",{seconds:2});await prepare("France?\nA. Berlin\nB. Madrid\nC. Paris\nD. Rome");await page.keyboard.press("Control+Shift+v");await until(v=>v.text==="C");
  await hover();await page.waitForTimeout(2500);assert.equal((await inspect()).text,"C");assert.equal(await page.evaluate(()=>document.activeElement.id),"question");await page.mouse.move(10,10);await until(v=>!v.host);
  results.push("Short MCQ hover pauses expiry past its original deadline; leaving resumes and auto-hides without focus theft");
- await connect("Groq",{seconds:10});await prepare("Write a Python program to reverse a string.");await page.keyboard.press("Control+Shift+v");await until(v=>v.text==="Code · hover to view");await hover();
+ await connect("Groq",{seconds:10});await prepare("Write a Python program to reverse a string.");await page.keyboard.press("Control+Shift+v");await until(v=>v.text==="Code");await hover();
  tree=(await inspect()).tree;const button=find(tree,n=>n.nodeName==="BUTTON");assert.ok(button);
  const box=await session.send("DOM.getBoxModel",{backendNodeId:button.backendNodeId}), quad=box.model.border;
  await page.mouse.click((quad[0]+quad[4])/2,(quad[1]+quad[5])/2);await page.waitForTimeout(200);

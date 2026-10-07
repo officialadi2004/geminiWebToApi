@@ -34,7 +34,8 @@ try {
  async function prepare(text) {await page.locator("#question").fill(text);await page.locator("#question").selectText();await page.keyboard.press("Control+c");}
  async function ask(text, expected) {
   await prepare(text); await page.keyboard.press("Control+Shift+v");
-  await until(v=>v.state==="processing"); await until(v=>v.text===expected);
+  const preview = /^[A-Z](?:, [A-Z])*$/.test(expected) ? expected : expected.length > 40 ? expected.slice(0,39)+"…" : expected;
+  await until(v=>v.state==="processing"); await until(v=>v.text===preview);
   assert.equal(page.url(),url+"/");assert.equal(context.pages().length,1);
   const ui=await page.evaluate(()=>{const host=document.getElementById("invisible-ai-answer"),r=host.getBoundingClientRect();return {focus:document.activeElement.id,pointer:getComputedStyle(host).pointerEvents,right:innerWidth-r.right,bottom:innerHeight-r.bottom,hit:document.elementFromPoint(r.right-2,r.bottom-2).id};});
   assert.equal(ui.focus,"question");assert.equal(ui.pointer,"none");assert.equal(ui.hit,"invisible-ai-answer");assert.ok(Math.abs(ui.right-20)<1 && Math.abs(ui.bottom-20)<1);

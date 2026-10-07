@@ -37,9 +37,16 @@ test("Details expand on hover only, collapse on leave, and code copy sends exact
  const f=await fixture();f.send({state:"processing",id:"one"});
  f.send({state:"answer",id:"one",text:"C",details:"Because Paris.",opacity:.94});let card=f.card();assert.equal(card.style["--answer-opacity"],"0.94");assert.ok(card.className.includes("expandable"));assert.ok(!card.className.includes("expanded"));card.dispatch("mouseenter");assert.ok(card.className.includes("expanded"));card.dispatch("mouseleave");assert.ok(!card.className.includes("expanded"));
  f.send({state:"processing",id:"two"});const code='if (x) {\n\tprintf("hello");\n}';
- f.send({state:"answer",id:"two",text:'```c\n'+code+'\n```'});card=f.card();assert.equal(card.children[0].textContent,"Code · hover to view");
+ f.send({state:"answer",id:"two",text:'```c\n'+code+'\n```'});card=f.card();assert.equal(card.children[0].textContent,"Code");
  const body=card.children[1],box=body.children[0],button=box.children[0].children[1];button.dispatch("click",{isTrusted:true});await Promise.resolve();assert.equal(f.messages[0].action,"copy-code");assert.equal(f.messages[0].text,code);assert.equal(button.textContent,"Copied ✓");
  f.timers.at(-1).fn();assert.equal(button.textContent,"Copy");assert.equal(f.document.activeElement.id,"question");
+});
+test("Compact previews are one short line while hover retains the complete answer",async()=>{
+ const f=await fixture();const text="Binary search repeatedly halves a sorted search range until it finds the requested value.";
+ f.send({state:"processing",id:"one"});f.send({state:"answer",id:"one",text});const card=f.card();
+ assert.equal(card.children[0].textContent.length,40);assert.ok(card.children[0].textContent.endsWith("…"));assert.equal(card.children[1].children[0].textContent,text);
+ card.dispatch("mouseenter");assert.ok(card.className.includes("expanded"));card.dispatch("mouseleave");assert.ok(!card.className.includes("expanded"));
+ f.send({state:"processing",id:"two"});f.send({state:"answer",id:"two",text:"A, C, D"});assert.equal(f.card().children[0].textContent,"A, C, D");
 });
 test("Every answer pauses on hover and resumes only its remaining duration",async()=>{
  const f=await fixture();f.send({state:"processing",id:"one"});f.send({state:"answer",id:"one",text:"B"});
