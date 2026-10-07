@@ -16,7 +16,7 @@ function setPreferences(data: Record<string, unknown>): void {
   preset.value = ["12", "22", "30"].includes(duration.value) ? duration.value : "custom"; durationUI();
   node<HTMLSelectElement>("answerMode").value = String(data.answerMode ?? "Quick");
   node<HTMLSelectElement>("programmingLanguage").value = String(data.programmingLanguage ?? "Auto Detect");
-  node<HTMLInputElement>("responseOpacity").value = String(Math.round(Number(data.responseOpacity ?? .94) * 100));
+  node<HTMLInputElement>("responseOpacity").value = String(Math.round(Number(data.responseOpacity ?? .55) * 100));
 }
 function preferences(): Record<string, unknown> {
   return { responseSeconds: Number(duration.value), answerMode: node<HTMLSelectElement>("answerMode").value, programmingLanguage: node<HTMLSelectElement>("programmingLanguage").value, responseOpacity: Number(node<HTMLInputElement>("responseOpacity").value) / 100 };

@@ -9,9 +9,12 @@ export async function run({page,worker,session,extensionContexts,connect,prepare
  let tree=(await inspect()).tree;
  const body=find(tree,n=>n.attributes?.includes("body"));assert.ok(body);
  const {object}=await session.send("DOM.resolveNode",{backendNodeId:body.backendNodeId});
- const style=await session.send("Runtime.callFunctionOn",{objectId:object.objectId,functionDeclaration:"function(){return {display:getComputedStyle(this).display,text:this.textContent,bg:getComputedStyle(this.parentElement).backgroundColor};}",returnByValue:true});
- assert.equal(style.result.value.display,"block");assert.ok(style.result.value.text.includes("Paris"));assert.ok(style.result.value.bg.includes("0.94"));
- await page.mouse.move(10,10);assert.ok(!(await inspect()).state.includes("expanded"));results.push("Detailed MCQ label first, hover expands/collapses, 94% dark background");
+ const style=await session.send("Runtime.callFunctionOn",{objectId:object.objectId,functionDeclaration:"function(){const s=getComputedStyle(this.parentElement);return {display:getComputedStyle(this).display,text:this.textContent,bg:s.backgroundColor,opacity:s.opacity,border:s.borderTopWidth,shadow:s.boxShadow};}",returnByValue:true});
+ assert.equal(style.result.value.display,"block");assert.ok(style.result.value.text.includes("Paris"));assert.equal(style.result.value.bg,"rgba(0, 0, 0, 0)");assert.equal(style.result.value.opacity,"0.55");assert.equal(style.result.value.border,"0px");assert.equal(style.result.value.shadow,"none");
+ await page.mouse.move(10,10);assert.ok(!(await inspect()).state.includes("expanded"));results.push("Detailed MCQ label first, hover expands/collapses, 55% subtle text without background/borders/shadow");
+ await hide();await connect("Groq",{seconds:2});await prepare("France?\nA. Berlin\nB. Madrid\nC. Paris\nD. Rome");await page.keyboard.press("Control+Shift+v");await until(v=>v.text==="C");
+ await hover();await page.waitForTimeout(2500);assert.equal((await inspect()).text,"C");assert.equal(await page.evaluate(()=>document.activeElement.id),"question");await page.mouse.move(10,10);await until(v=>!v.host);
+ results.push("Short MCQ hover pauses expiry past its original deadline; leaving resumes and auto-hides without focus theft");
  await connect("Groq",{seconds:10});await prepare("Write a Python program to reverse a string.");await page.keyboard.press("Control+Shift+v");await until(v=>v.text==="Code · hover to view");await hover();
  tree=(await inspect()).tree;const button=find(tree,n=>n.nodeName==="BUTTON");assert.ok(button);
  const box=await session.send("DOM.getBoxModel",{backendNodeId:button.backendNodeId}), quad=box.model.border;

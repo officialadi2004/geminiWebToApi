@@ -9,16 +9,38 @@
   }, true);
   let host: HTMLDivElement | undefined, card: HTMLDivElement | undefined;
   let current = "", timer: ReturnType<typeof setTimeout> | undefined, cancelSelection: (() => void) | undefined;
+  let remaining = 0, deadline = 0, hovered = false;
   const parent = (): Element => document.fullscreenElement ?? document.documentElement;
-  function hide(): void { clearTimeout(timer); cancelSelection?.(); host?.remove(); host = undefined; card = undefined; }
+  function hide(): void { clearTimeout(timer); timer = undefined; remaining = 0; deadline = 0; hovered = false; cancelSelection?.(); host?.remove(); host = undefined; card = undefined; }
+  function resumeExpiry(): void {
+    clearTimeout(timer); timer = undefined;
+    if (hovered) return;
+    if (remaining <= 0) { hide(); return; }
+    deadline = performance.now() + remaining;
+    timer = setTimeout(hide, remaining);
+  }
+  function pauseExpiry(): void {
+    if (remaining <= 0) return;
+    hovered = true;
+    if (timer !== undefined) remaining = Math.max(0, deadline - performance.now());
+    clearTimeout(timer); timer = undefined;
+  }
+  function expireAfter(seconds: number): void {
+    remaining = Math.max(2, Math.min(120, seconds || 22)) * 1000;
+    hovered = card?.matches(":hover") ?? false;
+    resumeExpiry();
+  }
   function mount(): void {
     if (host) return;
     host = document.createElement("div"); host.id = "invisible-ai-answer";
     host.style.cssText = "all:initial!important;position:fixed!important;right:20px!important;bottom:20px!important;z-index:2147483647!important;pointer-events:none!important;max-width:calc(100vw - 40px)!important;";
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
-    style.textContent = `:host{pointer-events:none}*{box-sizing:border-box} .card{font:13px/1.4 'Segoe UI',sans-serif;color:#f6f8fc;background:rgba(18,24,33,var(--answer-opacity,.94));border:1px solid #49515b;border-radius:6px;box-shadow:0 2px 9px #0003;max-width:min(300px,calc(100vw - 40px));pointer-events:none} .summary{padding:7px 10px;overflow-wrap:anywhere;white-space:pre-wrap;max-height:70px;overflow:hidden} .mcq .summary{font-size:16px;text-align:center;padding:5px 9px;min-width:30px} .expandable{pointer-events:auto;cursor:default} .body{display:none;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;max-height:min(420px,calc(100vh - 60px));overflow:auto} .expanded{max-width:min(480px,calc(100vw - 40px))} .expanded .body{display:block} .expanded .summary{border-bottom:1px solid #49515b} .text{margin:0 0 8px} .code{position:relative;margin:8px 0;border:1px solid #49515b;border-radius:4px;background:#111820} .code-head{display:flex;align-items:center;justify-content:space-between;padding:5px 8px;color:#c0c9d3;font-size:11px} pre{margin:0;padding:8px;overflow:auto;white-space:pre;font:12px/1.5 Consolas,monospace;color:#f6f8fc} button{font:11px 'Segoe UI',sans-serif;color:#fff;background:#303d4b;border:1px solid #657181;border-radius:3px;padding:3px 7px;cursor:pointer} .processing{padding:0;width:6px;height:6px;border:0;box-shadow:none;border-radius:50%;background:#2aa881;animation:pulse 1s ease-in-out infinite;pointer-events:none} @keyframes pulse{50%{opacity:.15}} @media(prefers-reduced-motion:reduce){.processing{animation:none}}`;
+    style.textContent = `:host{pointer-events:none}*{box-sizing:border-box} .card{font:12px/1.4 'Segoe UI',sans-serif;color:#727985;opacity:var(--answer-opacity,.55);background:none;border:0;border-radius:0;box-shadow:none;max-width:min(300px,calc(100vw - 40px));pointer-events:auto;cursor:default} .summary{padding:1px 2px;overflow-wrap:anywhere;white-space:pre-wrap;max-height:70px;overflow:hidden} .mcq .summary{font-size:14px;text-align:center;min-width:12px} .body{display:none;white-space:pre-wrap;overflow-wrap:anywhere;padding:4px 2px;max-height:min(420px,calc(100vh - 60px));overflow:auto} .expanded{max-width:min(480px,calc(100vw - 40px))} .expanded .body{display:block} .text{margin:0 0 6px} .code{position:relative;margin:6px 0;border:0;background:none} .code-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0;color:inherit;font-size:11px} pre{margin:0;padding:2px 0;overflow:auto;white-space:pre;font:12px/1.5 Consolas,monospace;color:inherit} button{font:11px 'Segoe UI',sans-serif;color:inherit;background:none;border:0;padding:2px 4px;cursor:pointer} .processing{padding:0;width:6px;height:6px;border:0;box-shadow:none;border-radius:50%;background:#2aa881;animation:pulse 1s ease-in-out infinite;pointer-events:none} @keyframes pulse{50%{opacity:.15}} @media(prefers-reduced-motion:reduce){.processing{animation:none}}`;
     card = document.createElement("div"); card.className = "card"; card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite");
+    const mountedCard = card;
+    card.addEventListener("mouseenter", () => { if (card !== mountedCard || card.classList.contains("processing")) return; pauseExpiry(); if (card.classList.contains("expandable")) card.classList.add("expanded"); });
+    card.addEventListener("mouseleave", () => { if (card !== mountedCard || card.classList.contains("processing")) return; card.classList.remove("expanded"); hovered = false; resumeExpiry(); });
     shadow.append(style, card); parent().append(host);
   }
   function details(body: HTMLDivElement, text: string): boolean {
@@ -48,7 +70,7 @@
   }
   function answer(text: string, explanation: string, opacity: number): void {
     mount(); card!.replaceChildren(); card!.className = "card";
-    card!.style.setProperty("--answer-opacity", String(Number.isFinite(opacity) ? Math.min(1, Math.max(.5, opacity)) : .94));
+    card!.style.setProperty("--answer-opacity", String(Number.isFinite(opacity) ? Math.min(1, Math.max(.5, opacity)) : .55));
     const summary = document.createElement("div"); summary.className = "summary";
     const body = document.createElement("div"); body.className = "body";
     const code = details(body, explanation || text);
@@ -58,8 +80,6 @@
     if (mcq) card!.classList.add("mcq");
     if (explanation || code || text.length > 140) {
       card!.append(body); card!.classList.add("expandable");
-      card!.addEventListener("mouseenter", () => card?.classList.add("expanded"));
-      card!.addEventListener("mouseleave", () => card?.classList.remove("expanded"));
     }
   }
   function select(id: string, reply: (value: unknown) => void): void {
@@ -118,7 +138,7 @@
     if (m.state === "processing") { current = m.id; hide(); mount(); card!.className = "processing"; timer = setTimeout(hide, 330000); return false; }
     if (m.id !== current) return false;
     clearTimeout(timer); answer(String(m.text ?? "").slice(0, 12000), String(m.details ?? "").slice(0, 12000), Number(m.opacity));
-    timer = setTimeout(hide, Math.max(2, Math.min(120, Number(m.seconds) || 22)) * 1000);
+    expireAfter(Number(m.seconds));
     return false;
   });
 })();

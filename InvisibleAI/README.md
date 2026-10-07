@@ -5,7 +5,8 @@ Daily use:
 - **Text:** select the question and all options → Ctrl+C → Ctrl+Shift+V.
 - **Image:** Ctrl+Shift+S → drag around the question → release. Escape or right-click cancels.
 - **Result:** a six-pixel pulsing dot becomes a compact answer, 20 CSS pixels from the bottom-right. It disappears after **22 seconds** by default. Ctrl+Shift+H hides it.
-- **Details/code:** hover the small answer to expand it. Move away to collapse. Each complete generated code block has a **Copy** button, which copies only code with its original indentation, quotes, tabs and line breaks.
+- **Hover:** any answer pauses its disappearance timer while hovered; moving away resumes the remaining time. Long answers expand on hover and collapse on leave. Each complete generated code block has a **Copy** button, which copies only code with its original indentation, quotes, tabs and line breaks.
+- **Appearance:** small gray text at 55% opacity by default, without panel backgrounds, borders or shadows. Details, code and Copy use the same subtle style.
 
 Nothing is drawn at idle. Ordinary Ctrl+C/V/X/Z remain untouched. The text shortcut reads the clipboard only on explicit invocation; there is no clipboard history or page/screen monitoring.
 
@@ -44,7 +45,7 @@ The installer stops only an obsolete invisible companion at this user's old inst
 3. Click **Connect / Save** to discover available models. Choose the desired model and click **Connect / Save** again to save that selection. Leave the credential blank when reusing a saved credential. Saved values are never returned to the browser.
 4. Image questions require a model marked **Images**. Models marked **Text only** remain usable for text, but produce `Selected model does not support images. Please choose an image-capable model.` for screenshots. No silent switching occurs.
 5. Choose **Quick** (default) or **Detailed**, and **Auto Detect** or a preferred programming language. These choices are included in every provider request. Choose 12, 22, 30 seconds or Custom (2–120 seconds).
-6. Advanced preferences include 50–100% answer-background opacity (default 94%), enable/disable, copied-text, selected-image and network permissions. **Save preferences** saves these without reconnecting. Existing disabled privacy permissions stay disabled during upgrades; enable **Allow selected image processing** here if it was previously off.
+6. Advanced preferences include 50–100% answer-text opacity (default 55%), enable/disable, copied-text, selected-image and network permissions. **Save preferences** saves these without reconnecting. Existing disabled privacy permissions stay disabled during upgrades; enable **Allow selected image processing** here if it was previously off. The previous default 94% background setting migrates to the new 55% text default; customized opacity values are retained.
 
 Gemini Web continues to use the existing `gemini-webapi` Web2API integration and session cookies, not Google's API-key API. Only the required `__Secure-1PSID` and optional `__Secure-1PSIDTS` values are passed to its private worker. Cookies can expire; reconnect with your own current values. Groq uses `https://api.groq.com/openai/v1/` with your own key. Model availability depends on your account and current provider catalog. Known image capability mapping is checked against [Groq's vision documentation](https://console.groq.com/docs/vision); available model IDs are fetched at connection/request time.
 
@@ -58,7 +59,7 @@ Gemini Web continues to use the existing `gemini-webapi` Web2API integration and
 - Programming requests: fenced code in the chosen/inferred language, rendered as code with Copy. Code plus answer options is still an MCQ.
 - Incomplete/unreadable image or missing information: **Uncertain**, rather than invented options. AI correctness is not guaranteed.
 
-The compact processing dot and ordinary short answers are click-through. Only an answer that has hover details/code has a small interactive hitbox. Its expanded card accepts scrolling and Copy; it collapses on mouse leave and never takes focus automatically. This intentionally means page elements immediately underneath that small hover hitbox cannot receive the same pointer event.
+The compact processing dot and the area outside the answer remain click-through. Every answer has a small hitbox matching its text so hovering can pause the timer, including single-letter MCQs. Details expand on hover, accept scrolling and Copy, then collapse on mouse leave without taking focus automatically. Page elements immediately underneath the answer's small hitbox cannot receive that same pointer event. The timer resumes its remaining duration rather than restarting, and new requests/hiding discard the old timer.
 
 ## Capture, privacy and limits
 

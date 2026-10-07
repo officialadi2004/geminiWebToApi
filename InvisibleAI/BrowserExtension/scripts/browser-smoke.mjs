@@ -8,7 +8,7 @@ const edge = process.argv.includes("--edge");
 const upgradeOnly = process.argv.includes("--upgrade-only");
 const qa = resolve("../artifacts/qa"), extension = resolve("dist");
 await mkdir(qa, { recursive: true });
-const server = createServer((req,res) => { res.setHeader("Content-Type","text/html"); res.end(`<html><head><title>Invisible AI Smoke</title></head><body><textarea id="question" style="width:600px;height:220px"></textarea><textarea id="paste"></textarea><button id="under" style="position:fixed;right:20px;bottom:20px;width:100px;height:50px" onclick="this.textContent='Clicked'">Underlying button</button></body></html>`); });
+const server = createServer((req,res) => { res.setHeader("Content-Type","text/html"); res.end(`<html><head><title>Invisible AI Smoke</title></head><body><textarea id="question" style="width:600px;height:220px"></textarea><textarea id="paste"></textarea><button id="under" style="position:fixed;right:340px;bottom:20px;width:100px;height:50px" onclick="this.textContent='Clicked'">Underlying button</button></body></html>`); });
 await new Promise(r=>server.listen(0,"127.0.0.1",r));
 let context;
 const results=[];
@@ -37,7 +37,7 @@ try {
   await until(v=>v.state==="processing"); await until(v=>v.text===expected);
   assert.equal(page.url(),url+"/");assert.equal(context.pages().length,1);
   const ui=await page.evaluate(()=>{const host=document.getElementById("invisible-ai-answer"),r=host.getBoundingClientRect();return {focus:document.activeElement.id,pointer:getComputedStyle(host).pointerEvents,right:innerWidth-r.right,bottom:innerHeight-r.bottom,hit:document.elementFromPoint(r.right-2,r.bottom-2).id};});
-  assert.equal(ui.focus,"question");assert.equal(ui.pointer,"none");assert.equal(ui.hit,"under");assert.ok(Math.abs(ui.right-20)<1 && Math.abs(ui.bottom-20)<1);
+  assert.equal(ui.focus,"question");assert.equal(ui.pointer,"none");assert.equal(ui.hit,"invisible-ai-answer");assert.ok(Math.abs(ui.right-20)<1 && Math.abs(ui.bottom-20)<1);
   await page.locator("#under").click();assert.equal(await page.locator("#under").textContent(),"Clicked");
   await until(v=>!v.host);
  }

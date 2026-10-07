@@ -84,7 +84,7 @@ internal static class UpgradeTests
     }
     private static Task Preferences()
     {
-        var s = new AppSettings(); Check(s.ResponseSeconds == 22 && s.ResponseOpacity == .94 && s.ScreenshotEnabled && s.ProgrammingLanguage == "Auto Detect");
+        var s = new AppSettings(); Check(s.ResponseSeconds == 22 && s.ResponseOpacity == .55 && s.ScreenshotEnabled && s.ProgrammingLanguage == "Auto Detect");
         s.ResponseSeconds = 120; s.Validate();
         foreach (string language in AppSettings.Languages) { s.ProgrammingLanguage = language; s.Validate(); }
         string folder = Path.Combine(Path.GetTempPath(), "InvisibleAI-upgrade-" + Guid.NewGuid()); Directory.CreateDirectory(folder);
@@ -95,6 +95,10 @@ internal static class UpgradeTests
             var loaded = store.Load(); Check(loaded.ResponseSeconds == 22 && !loaded.ScreenshotEnabled && !loaded.NetworkEnabled);
             store.Save(loaded); Check(store.Load().ResponseSeconds == 22);
             loaded.ResponseSeconds = 12; store.Save(loaded); Check(store.Load().ResponseSeconds == 12);
+            File.WriteAllText(store.Path, "{\"preferencesVersion\":3,\"responseSeconds\":30,\"responseOpacity\":0.94,\"screenshotEnabled\":false}");
+            loaded = store.Load(); Check(loaded.ResponseOpacity == .55 && loaded.PreferencesVersion == 4 && loaded.ResponseSeconds == 30 && !loaded.ScreenshotEnabled);
+            File.WriteAllText(store.Path, "{\"preferencesVersion\":3,\"responseOpacity\":0.7}");
+            Check(store.Load().ResponseOpacity == .7);
         }
         finally { Directory.Delete(folder, true); }
         return Task.CompletedTask;

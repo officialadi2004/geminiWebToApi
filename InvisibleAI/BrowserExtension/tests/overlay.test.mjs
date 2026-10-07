@@ -14,15 +14,17 @@ class Element {
  addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);}
  removeEventListener(name,fn){this.listeners[name]=(this.listeners[name]??[]).filter(f=>f!==fn);}
  setPointerCapture(){}
- get classList(){return {add:name=>{this.className+=" "+name;},remove:name=>{this.className=this.className.split(" ").filter(n=>n!==name).join(" ");}};}
- dispatch(name,extra={}){for(const fn of this.listeners[name]??[])fn({preventDefault(){},stopPropagation(){},stopImmediatePropagation(){},...extra});}
+ get classList(){return {add:name=>{this.className+=" "+name;},remove:name=>{this.className=this.className.split(" ").filter(n=>n!==name).join(" ");},contains:name=>this.className.split(" ").includes(name)};}
+ matches(selector){return selector===":hover"&&this.hovered===true;}
+ dispatch(name,extra={}){if(name==="mouseenter")this.hovered=true;if(name==="mouseleave")this.hovered=false;for(const fn of this.listeners[name]??[])fn({preventDefault(){},stopPropagation(){},stopImmediatePropagation(){},...extra});}
 }
 async function fixture(){
- let listener;const root=new Element("root"),document=new Element("document"),window=new Element("window"),timers=[],messages=[];
+ let listener,now=0;const root=new Element("root"),document=new Element("document"),window=new Element("window"),timers=[],messages=[];
  window.top=window;document.documentElement=root;document.createElement=tag=>new Element(tag);document.activeElement={id:"question"};
  const chrome={runtime:{id:"own",onMessage:{addListener(fn){listener=fn;}},async sendMessage(m){messages.push(m);return {ok:true};}}};
- vm.runInNewContext(await readFile(new URL("../dist/src/content/overlay.js",import.meta.url),"utf8"),{document,window,chrome,innerWidth:1000,innerHeight:800,scrollX:0,scrollY:0,requestAnimationFrame:fn=>fn(),setTimeout:(fn,ms)=>{const t={fn,ms};timers.push(t);return t;},clearTimeout:t=>{if(t)t.cancelled=true;}});
- return {root,document,window,timers,messages,send:m=>listener({target:"overlay",...m},{id:"own"},m.reply??(()=>{})),card:()=>root.children[0]?.shadow?.children.find(n=>n.tag==="div")};
+ vm.runInNewContext(await readFile(new URL("../dist/src/content/overlay.js",import.meta.url),"utf8"),{document,window,chrome,performance:{now:()=>now},innerWidth:1000,innerHeight:800,scrollX:0,scrollY:0,requestAnimationFrame:fn=>fn(),setTimeout:(fn,ms)=>{const t={fn,ms,at:now+ms};timers.push(t);return t;},clearTimeout:t=>{if(t)t.cancelled=true;}});
+ function advance(ms){const end=now+ms;for(;;){const next=timers.filter(t=>!t.cancelled&&t.at<=end).sort((a,b)=>a.at-b.at)[0];if(!next)break;now=next.at;next.cancelled=true;next.fn();}now=end;}
+ return {root,document,window,timers,messages,advance,send:m=>listener({target:"overlay",...m},{id:"own"},m.reply??(()=>{})),card:()=>root.children[0]?.shadow?.children.find(n=>n.tag==="div")};
 }
 test("Overlay is absent at idle, processing is tiny, default expiry is 22 seconds and hide removes it",async()=>{
  const f=await fixture();assert.equal(f.root.children.length,0);
@@ -38,6 +40,25 @@ test("Details expand on hover only, collapse on leave, and code copy sends exact
  f.send({state:"answer",id:"two",text:'```c\n'+code+'\n```'});card=f.card();assert.equal(card.children[0].textContent,"Code · hover to view");
  const body=card.children[1],box=body.children[0],button=box.children[0].children[1];button.dispatch("click",{isTrusted:true});await Promise.resolve();assert.equal(f.messages[0].action,"copy-code");assert.equal(f.messages[0].text,code);assert.equal(button.textContent,"Copied ✓");
  f.timers.at(-1).fn();assert.equal(button.textContent,"Copy");assert.equal(f.document.activeElement.id,"question");
+});
+test("Every answer pauses on hover and resumes only its remaining duration",async()=>{
+ const f=await fixture();f.send({state:"processing",id:"one"});f.send({state:"answer",id:"one",text:"B"});
+ const card=f.card();f.advance(5000);card.dispatch("mouseenter");f.advance(60000);assert.ok(f.card());
+ card.dispatch("mouseleave");assert.equal(f.timers.at(-1).ms,17000);f.advance(7000);card.dispatch("mouseenter");f.advance(100000);assert.ok(f.card());
+ card.dispatch("mouseleave");assert.equal(f.timers.at(-1).ms,10000);f.advance(9999);assert.ok(f.card());f.advance(1);assert.equal(f.root.children.length,0);
+});
+test("Hover timer handles details, replacement, hide and the processing watchdog independently",async()=>{
+ const f=await fixture();f.send({state:"processing",id:"one"});const watchdog=f.timers.at(-1);f.card().dispatch("mouseenter");assert.ok(!watchdog.cancelled);
+ f.send({state:"answer",id:"one",text:"C",details:"Explanation",seconds:12});const old=f.card();f.advance(2000);old.dispatch("mouseenter");f.advance(20000);assert.ok(f.card().className.includes("expanded"));
+ f.send({state:"processing",id:"two"});f.send({state:"answer",id:"two",text:"A",seconds:12});old.dispatch("mouseenter");f.advance(12000);assert.equal(f.root.children.length,0);
+ f.send({state:"processing",id:"three"});f.send({state:"answer",id:"three",text:"Code",seconds:12});const hidden=f.card();hidden.dispatch("mouseenter");f.send({state:"hide"});hidden.dispatch("mouseleave");f.advance(300000);assert.equal(f.root.children.length,0);
+});
+test("Answer text is subtle and borderless, including expanded text, code and Copy",async()=>{
+ const f=await fixture();f.send({state:"processing",id:"one"});f.send({state:"answer",id:"one",text:"B"});
+ assert.equal(f.card().style["--answer-opacity"],"0.55");const css=f.root.children[0].shadow.children[0].textContent;
+ assert.match(css,/\.card\{[^}]*background:none;[^{]*border:0;/);assert.match(css,/\.card\{[^}]*pointer-events:auto/);
+ for(const selector of [".code","button"])assert.ok(css.includes(selector+"{"));assert.ok(!css.includes("border:1px"));assert.ok(!css.includes("border-bottom"));
+ assert.equal(f.document.activeElement.id,"question");
 });
 test("Region selection removes UI before reply, clamps coordinates, and Escape/right-click cancel",async()=>{
  const f=await fixture();let reply;

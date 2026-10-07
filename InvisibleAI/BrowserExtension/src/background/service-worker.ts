@@ -50,7 +50,7 @@ async function clipboard(): Promise<string> {
   if (result.text.length > 50000) throw new Error("Question too long (maximum 50,000 characters).");
   return result.text;
 }
-async function display(tabId: number, id: string, state: string, text = "", seconds = 22, details = "", opacity = 0.94): Promise<void> {
+async function display(tabId: number, id: string, state: string, text = "", seconds = 22, details = "", opacity = 0.55): Promise<void> {
   await chrome.tabs.sendMessage(tabId, { target: "overlay", id, state, text, seconds, details, opacity });
 }
 const recent = new Map<number, number>();
@@ -96,7 +96,7 @@ async function ask(selectedTab?: chrome.tabs.Tab, image = false): Promise<void> 
     const data = await send({ version: 1, type: image ? "SCREENSHOT_INPUT" : "TEXT_INPUT", id, payload: image ? { imageBase64 } : { text } });
     if (active.get(tabId) !== id) return;
     const result = data.result as { content?: string; details?: string } | undefined;
-    await display(tabId, id, "answer", String(result?.content ?? "No answer received."), Number(data.responseSeconds ?? 22), String(result?.details ?? ""), Number(data.responseOpacity ?? 0.94));
+    await display(tabId, id, "answer", String(result?.content ?? "No answer received."), Number(data.responseSeconds ?? 22), String(result?.details ?? ""), Number(data.responseOpacity ?? 0.55));
   } catch (error) {
     if (active.get(tabId) !== id) return;
     // Restricted pages cannot receive UI; action badge provides a small indication.

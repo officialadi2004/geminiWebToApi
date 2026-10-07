@@ -21,6 +21,12 @@ public sealed class SettingsStore
             if (settings.ResponseSeconds == 12) settings.ResponseSeconds = 22;
             settings.MaxResponseLength = 12000; settings.MaxOutputTokens = 4096;
         }
+        if (!document.RootElement.TryGetProperty("preferencesVersion", out _) || settings.PreferencesVersion < 4)
+        {
+            // Replace the old default card opacity with subtle text; retain custom values.
+            if (settings.ResponseOpacity == .94) settings.ResponseOpacity = .55;
+            settings.PreferencesVersion = 4;
+        }
         // Read existing provider preferences; old UI fields are ignored.
         if (settings.Provider == "OpenAI") { settings.Provider = ""; settings.Model = ""; }
         settings.Validate();
