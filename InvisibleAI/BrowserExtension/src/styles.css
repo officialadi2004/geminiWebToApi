@@ -1,0 +1,17 @@
+:root { color-scheme: light; font-family: "Segoe UI", system-ui, sans-serif; color: #172b32; background: #f6f8f7; }
+* { box-sizing: border-box; }
+body { margin: 0; } main { padding: 24px; } .popup { width: 342px; } .settings main { max-width: 650px; margin: 52px auto; padding: 32px; }
+.eyebrow { display: flex; align-items: center; gap: 9px; font-size: 10px; font-weight: 700; letter-spacing: 1.6px; color: #376354; }
+.dot { width: 6px; height: 6px; border-radius: 50%; background: #29876c; flex-shrink: 0; }
+h1 { font-size: 29px; letter-spacing: -1px; line-height: 1.15; margin: 16px 0 8px; font-weight: 600; } .settings h1 { font-size: 44px; }
+h2 { font-size: 18px; font-weight: 600; margin: 0 0 14px; } p { line-height: 1.6; } .muted { color: #697875; font-size: 13px; margin: 0 0 24px; }
+.status { font-size: 12px; border: 1px solid #dbe5df; border-radius: 8px; padding: 12px; margin: 20px 0 16px; line-height: 1.6; overflow-wrap: anywhere; }
+button { display: block; width: 100%; border: 1px solid #d6e0da; border-radius: 7px; padding: 11px 13px; background: #fff; color: #243f35; text-align: left; font: inherit; font-size: 12px; margin: 8px 0; cursor: pointer; }
+button:hover { background: #eaf1ed; } button:focus-visible, select:focus-visible { outline: 2px solid #29876c; outline-offset: 3px; } button:disabled { opacity: .5; cursor: wait; }
+.primary { background: #254e3e; color: white; border-color: #254e3e; }.primary:hover { background: #193e2f; }.primary span { float: right; }
+.note { font-size: 12px; color: #6b7772; line-height: 1.75; margin: 20px 0; } kbd, code { font: 11px "Consolas", monospace; background: #e8eeea; padding: 2px 4px; border-radius: 3px; }
+footer { border-top: 1px solid #dce4df; display: flex; justify-content: space-between; align-items: center; margin-top: 25px; padding-top: 10px; } footer span { font-size: 8px; letter-spacing: 1px; color: #84938a; }
+button.link { width: auto; border: 0; background: transparent; padding: 0; font-size: 11px; }
+section { background: #fff; border: 1px solid #dce4df; border-radius: 12px; padding: 24px; margin-top: 20px; }
+label { font-size: 13px; display: block; margin: 12px 0; } .check { display: flex; align-items: center; gap: 10px; margin: 20px 0; }
+select { border: 1px solid #d6e0da; padding: 10px; border-radius: 6px; width: 100%; background: #f8faf9; font: inherit; }

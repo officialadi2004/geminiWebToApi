@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "Invisible AI Assistant",
+  "version": "1.0.0",
+  "description": "Explicit selection-to-AI actions with a tiny Windows companion indicator. No page overlays or background capture.",
+  "permissions": ["nativeMessaging", "activeTab", "scripting", "contextMenus"],
+  "background": { "service_worker": "src/background/service-worker.js", "type": "module" },
+  "action": { "default_popup": "src/popup/index.html", "default_title": "Invisible AI Assistant" },
+  "options_ui": { "page": "src/settings/index.html", "open_in_tab": true }
+}

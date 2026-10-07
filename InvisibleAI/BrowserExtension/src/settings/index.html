@@ -1,0 +1,13 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invisible AI · Settings</title><link rel="stylesheet" href="../styles.css"></head>
+<body class="settings"><main>
+<div class="eyebrow"><span class="dot"></span> INVISIBLE AI ASSISTANT</div><h1>Small presence.<br>Full control.</h1>
+<p class="muted">The Windows companion owns the hotkeys, appearance, privacy controls, and encrypted provider credentials.</p>
+<section><h2>Connection</h2><p id="status" role="status">Checking companion…</p><p class="note">Extension ID for Install.ps1: <code id="extension-id"></code></p><button id="connect">Reconnect</button><button id="desktop">Open Windows settings</button></section>
+<section><h2>AI Provider</h2><p class="note">Choose explicitly. No automatic fallback. Enter cookies or keys only in the Windows settings password field; this browser never receives them.</p>
+<label for="provider">Selected provider</label><select id="provider"><option value="" disabled selected>Choose a provider</option><option>Gemini Web</option><option>Groq</option></select>
+<button id="test-provider">Test saved provider connection</button><p id="provider-status" role="status">Not tested.</p></section>
+<section><h2>Answer preferences</h2><label for="mode">Response mode</label><select id="mode"><option>SHORT</option><option selected>CONCISE</option><option>DETAILED</option></select>
+<label class="check"><input type="checkbox" id="web"> Allow web search when current facts are needed</label><button id="save" class="primary">Save to Windows companion</button></section>
+<section><h2>Only when you ask</h2><p class="note">Selected text is read when you click Ask or the selection context menu. This extension does not watch your clipboard, capture your screen, inject overlays, or store answers. Data is sent through Native Messaging to your companion and then only to your selected Gemini Web or Groq account.</p></section>
+</main><script type="module" src="settings.js"></script></body></html>

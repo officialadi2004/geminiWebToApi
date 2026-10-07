@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF><UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>InvisibleAI.Companion</AssemblyName>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <StartupObject>InvisibleAI.Companion.Program</StartupObject>
+    <!-- WPF owns PMv2 via its manifest. WinForms is used only for tray/monitor helpers. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="../Shared/InvisibleAI.Shared.csproj" /><Compile Remove="NativeMessaging/Host/**/*.cs" /></ItemGroup>
+  <ItemGroup><Content Include="AI/GeminiWeb/worker.py;AI/GeminiWeb/requirements.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" /></ItemGroup>
+</Project>

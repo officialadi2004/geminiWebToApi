@@ -1,0 +1,1 @@
+gemini-webapi==2.1.1
