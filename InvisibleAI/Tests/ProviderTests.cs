@@ -17,12 +17,12 @@ namespace InvisibleAI.Tests;
 
 internal static class ProviderTests
 {
-    public static InvisibleAI.Helper.Session FixtureSession()
+    public static InvisibleAI.Helper.Session FixtureSession(InvisibleAI.Helper.Display.IPrivateResponseDisplay? display = null)
     {
         // Test executable only. No simulated providers or credentials ship in the helper.
         var x = Create(); x.Http.FixtureDelay = 500; x.Worker.FixtureDelay = 500; var store = new SettingsStore(Environment.GetEnvironmentVariable("INVISIBLEAI_TEST_PROFILE") ?? Path.Combine(AppContext.BaseDirectory, "fixture-profile"));
         if (!File.Exists(store.Path)) { var settings = Config(); settings.ResponseSeconds = 2; store.Save(settings); }
-        return new InvisibleAI.Helper.Session(x.Service, store, x.Vault);
+        return new InvisibleAI.Helper.Session(x.Service, store, x.Vault, display);
     }
     private static string UserText(string body)
     {

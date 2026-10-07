@@ -3,6 +3,7 @@ using System.Collections.Concurrent;
 using InvisibleAI.Helper.AI;
 using InvisibleAI.Helper.Settings;
 using InvisibleAI.Shared.Protocol;
+using InvisibleAI.Helper.Display;
 
 namespace InvisibleAI.Helper;
 
@@ -15,7 +16,8 @@ public static class Program
         using var http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { Timeout = Timeout.InfiniteTimeSpan };
         var credentials = new ProviderCredentials();
         var service = new AIService(new GroqProvider(http, credentials), new GeminiWebProvider(new GeminiWorkerProcess(), credentials));
-        await RunAsync(new Session(service, new SettingsStore(), credentials), Console.OpenStandardInput(), Console.OpenStandardOutput());
+        using var display = new WindowsPrivateResponseDisplay();
+        await RunAsync(new Session(service, new SettingsStore(), credentials, display), Console.OpenStandardInput(), Console.OpenStandardOutput());
     }
     public static async Task RunAsync(Session session, Stream input, Stream output)
     {

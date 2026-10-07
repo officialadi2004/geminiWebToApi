@@ -15,11 +15,14 @@ internal static class Program
     {
         if (args.Contains("--native-fixture") || args.Contains(ExtensionIdentity.Origin)) {
             if (!args.Contains(ExtensionIdentity.Origin)) return 1;
-            await InvisibleAI.Helper.Program.RunAsync(ProviderTests.FixtureSession(), Console.OpenStandardInput(), Console.OpenStandardOutput()); return 0;
+            using var display = new InvisibleAI.Helper.Display.WindowsPrivateResponseDisplay();
+            await InvisibleAI.Helper.Program.RunAsync(ProviderTests.FixtureSession(display), Console.OpenStandardInput(), Console.OpenStandardOutput()); return 0;
         }
         int failed = 0;
         var tests = new List<(string Name, Func<Task> Run)>(ProviderTests.All) { ("Upgrade: retire only the installed companion and its own startup command", LegacyPaths), ("Framing: Unicode and fragmentation", FramingRoundTrip), ("Framing: invalid input", FramingInvalid), ("MCQ: arbitrary labels, true/false, ambiguity and concise text", Answers), ("Settings: persistence and validation", Settings), ("Windows: isolated Credential Manager round trip", Credentials), ("Helper: write-only credentials, routing and caller field rejection", ProviderTests.SessionWorkflow) };
         tests.AddRange(UpgradeTests.All);
+        tests.AddRange(PrivateDisplayTests.All);
+        if (args.Contains("--native-ui-tests")) tests.AddRange(PrivateDisplayTests.WindowsUI);
         foreach (var test in tests) try { await test.Run(); Console.WriteLine("PASS " + test.Name); } catch (Exception e) { failed++; Console.WriteLine("FAIL " + test.Name + ": " + e.Message); }
         Console.WriteLine($"{tests.Count - failed} passed; {failed} failed."); return failed == 0 ? 0 : 1;
     }

@@ -31,7 +31,7 @@ function send(m: WireMessage): Promise<Record<string, unknown>> {
   });
 }
 function cancel(id: string): void {
-  try { port?.postMessage(wire("CANCEL", { targetId: id })); } catch { /* Already disconnected. */ }
+  try { port?.postMessage(wire("HIDE_RESPONSE", { targetId: id })); port?.postMessage(wire("CANCEL", { targetId: id })); } catch { /* Already disconnected. */ }
 }
 let creating: Promise<void> | undefined;
 async function clipboardDocument(): Promise<void> {
@@ -63,14 +63,18 @@ async function ask(selectedTab?: chrome.tabs.Tab, image = false): Promise<void> 
   const previous = active.get(tabId); if (previous) cancel(previous);
   active.set(tabId, id);
   let imageBase64: string | undefined, screenshot: string | undefined;
+  // Unknown preferences fail closed: errors must not accidentally enter a shared page.
+  let privateResponses = true;
   try {
+    const preferences = await send(wire("PING"));
+    if (active.get(tabId) !== id) return;
+    privateResponses = preferences.privateResponses === true;
     // Command invocation grants activeTab. Nothing is injected or read at idle.
     if (!selectedTab) await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/overlay.js"] });
+    if (privateResponses) await display(tabId, id, "prepare");
     let text: string | undefined;
     if (image) {
-      await display(tabId, id, "prepare");
-      const preferences = await send(wire("PING"));
-      if (active.get(tabId) !== id) return;
+      if (!privateResponses) await display(tabId, id, "prepare");
       if (preferences.enabled === false || preferences.networkEnabled === false || preferences.screenshotEnabled === false) throw new Error("Image processing is disabled in extension settings.");
       const selection = await chrome.tabs.sendMessage(tabId, { target: "overlay", state: "select", id }) as { cancelled?: boolean; region?: Region };
       if (active.get(tabId) !== id || selection?.cancelled) return;
@@ -85,22 +89,30 @@ async function ask(selectedTab?: chrome.tabs.Tab, image = false): Promise<void> 
       if (active.get(tabId) !== id) return;
       imageBase64 = await cropImage(screenshot, selection.region); screenshot = undefined;
     } else {
-      await display(tabId, id, "processing");
-      const preferences = await send(wire("PING"));
-      if (active.get(tabId) !== id) return;
+      if (!privateResponses) await display(tabId, id, "processing");
       if (preferences.enabled === false || preferences.networkEnabled === false || preferences.clipboardEnabled === false) throw new Error("Text processing is disabled in extension settings.");
       text = await clipboard();
     }
     if (active.get(tabId) !== id) return;
-    if (image) await display(tabId, id, "processing");
-    const data = await send({ version: 1, type: image ? "SCREENSHOT_INPUT" : "TEXT_INPUT", id, payload: image ? { imageBase64 } : { text } });
+    if (image && !privateResponses) await display(tabId, id, "processing");
+    const payload = image ? { imageBase64 } : { text };
+    const data = await send({ version: 1, type: image ? "SCREENSHOT_INPUT" : "TEXT_INPUT", id, payload: privateResponses ? { ...payload, privateResponses: true } : payload });
     if (active.get(tabId) !== id) return;
+    if (privateResponses) {
+      if (data.privateResponses !== true || data.displayed !== true) throw new Error("Private display unavailable. Update Invisible AI Setup.");
+      return;
+    }
+    if (data.privateResponses === true) { await display(tabId, id, "hide"); return; }
     const result = data.result as { content?: string; details?: string } | undefined;
     await display(tabId, id, "answer", String(result?.content ?? "No answer received."), Number(data.responseSeconds ?? 22), String(result?.details ?? ""), Number(data.responseOpacity ?? 0.55));
   } catch (error) {
     if (active.get(tabId) !== id) return;
     // Restricted pages cannot receive UI; action badge provides a small indication.
-    try { await display(tabId, id, "error", error instanceof Error ? error.message : "Could not connect to AI provider."); }
+    const message = error instanceof Error ? error.message : "Could not connect to AI provider.";
+    if (privateResponses) {
+      await chrome.action.setBadgeText({ tabId, text: "!" });
+      await chrome.action.setTitle({ tabId, title: `Invisible AI: ${message}` });
+    } else try { await display(tabId, id, "error", message); }
     catch { await chrome.action.setBadgeText({ tabId, text: "!" }); await chrome.action.setTitle({ tabId, title: "Invisible AI: use an ordinary webpage; this page cannot display extension UI." }); }
   } finally {
     // Explicitly release image string references; JavaScript strings cannot be securely zeroed.
@@ -139,13 +151,13 @@ chrome.runtime.onMessage.addListener((request: unknown, sender, reply) => {
   if (r.action === "status") response = send(wire("PING"));
   else if (r.action === "privacy") {
     const values = r.values;
-    if (!values || Object.keys(values).some(k => !["enabled", "clipboardEnabled", "screenshotEnabled", "networkEnabled", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity"].includes(k))) { reply({ ok: false, error: "Invalid privacy settings." }); return false; }
+    if (!values || Object.keys(values).some(k => !["enabled", "clipboardEnabled", "screenshotEnabled", "networkEnabled", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity", "privateResponses"].includes(k))) { reply({ ok: false, error: "Invalid privacy settings." }); return false; }
     for (const [tabId, id] of active) { cancel(id); void display(tabId, id, "hide").catch(() => {}); }
     active.clear(); response = send(wire("SETTINGS_UPDATE", values));
   }
   else if (r.action === "save") {
     const v = r.values;
-    if (!v || !["Gemini Web", "Groq"].includes(String(v.provider)) || Object.keys(v).some(k => !["provider", "credential", "model", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity"].includes(k))) { reply({ ok: false, error: "Invalid provider settings." }); return false; }
+    if (!v || !["Gemini Web", "Groq"].includes(String(v.provider)) || Object.keys(v).some(k => !["provider", "credential", "model", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity", "privateResponses"].includes(k))) { reply({ ok: false, error: "Invalid provider settings." }); return false; }
     // Switching configuration cancels pending generations; never route to a fallback.
     for (const [tabId, id] of active) { cancel(id); void display(tabId, id, "hide").catch(() => { /* Tab navigated. */ }); }
     active.clear(); response = send(wire("CONNECT", v));

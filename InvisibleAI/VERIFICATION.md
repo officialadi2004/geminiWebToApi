@@ -1,5 +1,25 @@
 # Verification record — browser-first update, 7 October 2026
 
+## Follow-up: optional private Windows answers, 8 October 2026
+
+An optional native response window was added inside the existing Native Messaging helper. Standard browser mode remains the default. Private text/image results return only `privateResponses` and `displayed`, never content/details/code; the extension does not render private processing/answer/error UI in the page and refuses browser fallback. A per-request private flag prevents a concurrent preference change from downgrading an existing private request. Windows exclusion is set/verified while hidden before display/upload. No WPF companion, tray, hooks, capture-monitoring service or sharing-app modification was restored.
+
+Executed on the interactive Windows desktop:
+
+- Full `Build.ps1 -NativeDisplay`: Ruff, nine Python worker tests, **30 .NET tests**, ESLint, TypeScript checking, production extension build and **25 extension tests** passed; zero .NET warnings/errors. Default CI runs the 27 non-interactive .NET tests; three desktop UI/capture tests require the explicit flag.
+- Native HWND: `WDA_EXCLUDEFROMCAPTURE` read back as 0x11; compact bounds stayed on the active monitor; no-activate/toolwindow/click-through styles and unchanged foreground HWND verified. Stale answer/hide IDs could not replace/hide the newer answer. Explicit hide and automatic expiry passed.
+- Native hover: pointer moved to the synthetic MCQ, response stayed visible past the original two-second expiry, expanded bounds stayed below 50px, and leaving resumed expiry. Original pointer position was restored.
+- Real Windows **GDI BitBlt + CAPTUREBLT**: an opaque synthetic fixture covered the captured rectangle. An unexcluded positive-control answer changed the captured pixels; the excluded answer's pixels exactly matched the fixture-only baseline. This captured only owned synthetic pixels in memory and produced no screenshot file.
+- Real disposable **Edge** upgrade integration: existing hover styling/timer, code Copy, selection cancellation, controlled image cropping/provider routing and DOM fullscreen passed. Both Gemini and Groq fixture upstreams produced real native-window completions through Native Messaging; no answer/processing overlay appeared in the page, focus/URL/tab count remained unchanged, and fullscreen entered with the browser windows API stayed active. Physical F11 and real screenshot-command capture permission were not verified by this harness.
+- Production publish succeeded: self-contained Windows helper with desktop UI runtime, bundled Gemini worker, installer and extension. Updated helper installed quietly; installed helper DLL matched published DLL; saved settings were unchanged.
+- **Live installed-helper requests to both Groq and Gemini Web** succeeded using existing securely stored credentials and a synthetic France MCQ. Each private completion contained exactly `{privateResponses:true, displayed:true}`. Explicit native hide succeeded. Original provider/preferences were restored byte-for-byte; Native Messaging stderr was empty. This confirms live generation/private delivery, not the correctness of the private answer's text.
+
+Validation/build/publish used an ignored isolated copy of committed source plus this change. Three pre-existing unrelated working-tree edits (`AI/AnswerPolicy.cs`, `AI/Providers.cs`, `Tests/UpgradeTests.cs`) were preserved and excluded from this commit/release. The existing UpgradeTests edit references a missing `Numbered` method, so that uncommitted working tree cannot currently build; the isolated release source passes. Existing provider implementations/credentials were not changed by this feature.
+
+**NOT VERIFIED:** Google Meet recipient-side entire-screen capture, Chrome integration for this change, physical F11, multiple monitors with mixed DPI, alternate GPU/driver/capture paths, protected/exclusive-fullscreen surfaces or the remote CI run. Microsoft does not guarantee exclusion against all capture methods. The local GDI result is not proof of Google Meet invisibility. Follow README's second-device recipient-view checklist in Chrome and Edge before relying on private mode.
+
+## Earlier browser-first verification
+
 Test environment: Windows x64 build 26300, .NET SDK 10.0.401/runtime 10.0.11, Node 22.19.0, Python 3.11.9, gemini-webapi 2.1.1, PyInstaller 6.19.0. Installed Edge 154.0.4258.62 and Chrome 154.0.8037.98 were identified before testing. This record supersedes the previous WPF/tray/capture verification record.
 
 | Check actually executed | Result |

@@ -30,6 +30,7 @@
         "CONNECT",
         "CONNECTED",
         "CANCEL",
+        "HIDE_RESPONSE",
         "PROVIDER_API",
         "PROVIDER_RESULT"
       ]
@@ -61,6 +62,7 @@
               "text"
             ],
             "properties": {
+              "privateResponses": { "type": "boolean" },
               "text": {
                 "type": "string",
                 "minLength": 1,
@@ -91,6 +93,7 @@
               "imageBase64"
             ],
             "properties": {
+              "privateResponses": { "type": "boolean" },
               "imageBase64": {
                 "type": "string",
                 "minLength": 1,

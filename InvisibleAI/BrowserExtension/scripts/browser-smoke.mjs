@@ -15,6 +15,11 @@ const results=[];
 try {
  context = await chromium.launchPersistentContext(await mkdtemp(qa+"/browser-"), { ...(edge?{executablePath:"C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe"}:{}),headless:false,viewport:null,args:["--disable-extensions-except="+extension,"--load-extension="+extension] });
  const worker=context.serviceWorkers()[0]||await context.waitForEvent("serviceworker",{timeout:10000});
+ await worker.evaluate(()=>{
+  globalThis.privateCompletions=[];
+  const original=chrome.runtime.connectNative.bind(chrome.runtime);
+  chrome.runtime.connectNative=(name)=>{const port=original(name);port.onMessage.addListener(m=>{if(m.type==="PROCESSING_COMPLETE"&&m.payload?.privateResponses)globalThis.privateCompletions.push(m.payload);});return port;};
+ });
  const page=context.pages()[0];const url=`http://127.0.0.1:${server.address().port}`;await page.goto(url);
  // This grant belongs only to the disposable test profile and synthetic localhost page.
  await context.grantPermissions(["clipboard-read","clipboard-write"],{origin:url});
@@ -42,9 +47,10 @@ try {
   await page.locator("#under").click();assert.equal(await page.locator("#under").textContent(),"Clicked");
   await until(v=>!v.host);
  }
- async function connect(provider, {mode="Quick", model="", seconds=2}={}) {
+ async function connect(provider, {mode="Quick", model="", seconds=2, privateResponses=false}={}) {
   const settings=await context.newPage();await settings.goto(worker.url().replace("src/background/service-worker.js","src/settings/index.html"));await settings.locator("#provider").selectOption(provider);
   await settings.locator("#credential").fill(provider==="Groq"?"synthetic-groq-sentinel":"__Secure-1PSID=synthetic-gemini-sentinel; __Secure-1PSIDTS=synthetic-ts-sentinel");
+  await settings.locator("#privateResponses").setChecked(privateResponses);
   await settings.locator("#durationPreset").selectOption("custom"); await settings.locator("#duration").fill(String(seconds)); await settings.locator("#answerMode").selectOption(mode); await settings.locator("#save").click();await settings.waitForFunction(()=>document.getElementById("status").textContent.includes("Connected"));assert.equal(await settings.locator("#credential").inputValue(),"");assert.ok(await settings.locator("#model option").count()>0);if(model){await settings.locator("#model").selectOption(model);await settings.locator("#save").click();await settings.waitForFunction(()=>document.getElementById("status").textContent.includes("Connected"));}await settings.close();await page.bringToFront();
  }
  await page.waitForTimeout(200);assert.equal((await inspect()).host,false);
@@ -73,6 +79,7 @@ try {
  await prepare("France?\nA. Berlin\nB. Madrid\nC. Paris\nD. Rome");await page.keyboard.press("Control+Shift+v");await until(v=>v.state==="processing");await page.waitForTimeout(220);await prepare("Python?\nA. True\nB. False");await page.keyboard.press("Control+Shift+v");await until(v=>v.text==="A");await page.waitForTimeout(700);assert.equal((await inspect()).text,"A");results.push("Request replacement/cancellation ignores superseded result");
  }
  await (await import("./browser-upgrade-smoke.mjs")).run({page,worker,session,extensionContexts,connect,prepare,inspect,until,ask,results});
+ await (await import("./browser-private-smoke.mjs")).run({page,worker,context,connect,prepare,inspect,results});
  await writeFile(qa+`/browser-${edge?"edge":"chrome"}.json`,JSON.stringify({browser:edge?"Edge":"Chrome for Testing",results,physicalF11:"NOT TESTED",liveProviders:"NOT TESTED"},null,2));
  for(const result of results)console.log((result.includes("NOT TESTED")?"LIMITATION ":"PASS ")+result);
 } finally {if(context)await context.close();await new Promise(r=>server.close(r));}

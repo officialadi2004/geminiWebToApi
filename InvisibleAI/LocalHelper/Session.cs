@@ -2,12 +2,13 @@ using System.Text.Json;
 using InvisibleAI.Helper.AI;
 using InvisibleAI.Helper.Settings;
 using InvisibleAI.Shared.Protocol;
+using InvisibleAI.Helper.Display;
 
 namespace InvisibleAI.Helper;
 
 // Only the registered extension can start this stdio service. Credentials are write-only
 // across this boundary; Windows Credential Manager supplies the current user's identity.
-public sealed class Session(AIService ai, SettingsStore store, IProviderCredentials credentials)
+public sealed class Session(AIService ai, SettingsStore store, IProviderCredentials credentials, IPrivateResponseDisplay? display = null)
 {
     private readonly SemaphoreSlim configuration = new(1, 1);
     public async Task<Message> HandleAsync(Message message, CancellationToken ct)
@@ -25,8 +26,12 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
         {
             case "PING":
                 Fields(); return Message.Create("STATUS", message.Id, Public(store.Load()));
+            case "HIDE_RESPONSE":
+                Fields("targetId");
+                if (display is not null) await display.HideAsync(Text("targetId") is { Length: > 0 } target ? target : null);
+                return Message.Create("STATUS", message.Id, new { hidden = true });
             case "SETTINGS_UPDATE":
-                Fields("enabled", "clipboardEnabled", "screenshotEnabled", "networkEnabled", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity");
+                Fields("enabled", "clipboardEnabled", "screenshotEnabled", "networkEnabled", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity", "privateResponses");
                 await configuration.WaitAsync(ct);
                 try {
                     var value = store.Load();
@@ -38,10 +43,12 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
                         if (p.Value.TryGetProperty("responseSeconds", out var duration)) value.ResponseSeconds = duration.GetInt32();
                         Preferences(value);
                     }
-                    store.Save(value); return Message.Create("STATUS", message.Id, Public(value));
+                    store.Save(value);
+                    if (display is not null) await display.HideAsync();
+                    return Message.Create("STATUS", message.Id, Public(value));
                 } finally { configuration.Release(); }
             case "CONNECT":
-                Fields("provider", "credential", "model", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity");
+                Fields("provider", "credential", "model", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity", "privateResponses");
                 await configuration.WaitAsync(ct);
                 try
                 {
@@ -69,17 +76,20 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
                     if (p is not null && p.Value.TryGetProperty("responseSeconds", out var duration)) s.ResponseSeconds = duration.GetInt32();
                     Preferences(s);
                     s.Validate(); store.Save(s);
+                    if (display is not null) await display.HideAsync();
                     return Message.Create("CONNECTED", message.Id, new { settings = Public(s), models, connected = true });
                 }
                 finally { configuration.Release(); }
             case "TEXT_INPUT":
-                Fields("text");
+                Fields("text", "privateResponses");
                 var settings = store.Load();
-                var result = await ai.AskTextAsync(Text("text"), settings, ct);
-                return Complete(result, settings);
+                RequirePrivate(settings);
+                if (!settings.Enabled || !settings.NetworkEnabled || !settings.ClipboardEnabled) throw new AIProviderException("Text processing is disabled in extension settings.");
+                return await Generate(settings, () => ai.AskTextAsync(Text("text"), settings, ct));
             case "SCREENSHOT_INPUT":
-                Fields("imageBase64");
+                Fields("imageBase64", "privateResponses");
                 var imageSettings = store.Load();
+                RequirePrivate(imageSettings);
                 if (!imageSettings.Enabled || !imageSettings.NetworkEnabled || !imageSettings.ScreenshotEnabled) throw new AIProviderException("Image processing is disabled in extension settings.");
                 string encoded = Text("imageBase64");
                 if (encoded.Length is 0 or > 6990508) throw new AIProviderException("Could not read the selected region.");
@@ -89,7 +99,7 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
                 try
                 {
                     ImageInput.Validate(image);
-                    return Complete(await ai.AskImageAsync(image, imageSettings, ct), imageSettings);
+                    return await Generate(imageSettings, () => ai.AskImageAsync(image, imageSettings, ct));
                 }
                 finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(image); }
             case "PROVIDER_API":
@@ -98,15 +108,42 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
             default: throw new AIProviderException("Unknown request.");
         }
         Message Complete(AIAnswer answer, AppSettings settings) => Message.Create("PROCESSING_COMPLETE", message.Id, new { result = answer.ToUnifiedResponse(), responseSeconds = settings.ResponseSeconds, responseOpacity = settings.ResponseOpacity });
+        async Task<Message> Generate(AppSettings settings, Func<Task<AIAnswer>> generate)
+        {
+            if (!settings.PrivateResponses) return Complete(await generate(), settings);
+            if (display is null) throw new AIProviderException("Update Invisible AI Setup to use private responses.");
+            await display.BeginAsync(message.Id, settings, ct);
+            try
+            {
+                var answer = await generate(); ct.ThrowIfCancellationRequested();
+                await display.AnswerAsync(message.Id, answer, ct);
+                // Private answers, including explanations/code, never cross into browser DOM.
+                return Message.Create("PROCESSING_COMPLETE", message.Id, new { privateResponses = true, displayed = true });
+            }
+            catch (OperationCanceledException) { await display.HideAsync(message.Id); throw; }
+            catch (Exception error)
+            {
+                if (ct.IsCancellationRequested) await display.HideAsync(message.Id);
+                else await display.AnswerAsync(message.Id, new(error is AIProviderException safe ? safe.Message : "Could not connect to AI provider.", []), ct);
+                // Errors are private too; the extension never draws them on the shared page.
+                throw;
+            }
+        }
+        void RequirePrivate(AppSettings value)
+        {
+            // A concurrent settings change must never downgrade an already-private request.
+            if (p is not null && p.Value.TryGetProperty("privateResponses", out var flag) && flag.GetBoolean()) value.PrivateResponses = true;
+        }
         void Preferences(AppSettings value)
         {
             if (p is null) return;
             if (p.Value.TryGetProperty("answerMode", out var mode)) value.ResponseMode = mode.GetString() switch { "Quick" => ResponseMode.CONCISE, "Detailed" => ResponseMode.DETAILED, _ => throw new AIProviderException("Choose Quick or Detailed.") };
             if (p.Value.TryGetProperty("programmingLanguage", out var language)) value.ProgrammingLanguage = language.GetString() ?? "";
             if (p.Value.TryGetProperty("responseOpacity", out var opacity)) value.ResponseOpacity = opacity.GetDouble();
+            if (p.Value.TryGetProperty("privateResponses", out var privateResponses)) value.PrivateResponses = privateResponses.GetBoolean();
         }
     }
     private object Public(AppSettings s) => new { provider = s.Provider, model = s.Model, responseSeconds = s.ResponseSeconds, enabled = s.Enabled, clipboardEnabled = s.ClipboardEnabled, networkEnabled = s.NetworkEnabled,
-        screenshotEnabled = s.ScreenshotEnabled, answerMode = s.ResponseMode == ResponseMode.DETAILED ? "Detailed" : "Quick", programmingLanguage = s.ProgrammingLanguage, responseOpacity = s.ResponseOpacity,
+        screenshotEnabled = s.ScreenshotEnabled, answerMode = s.ResponseMode == ResponseMode.DETAILED ? "Detailed" : "Quick", programmingLanguage = s.ProgrammingLanguage, responseOpacity = s.ResponseOpacity, privateResponses = s.PrivateResponses,
         credentialSaved = s.Provider.Length != 0 && credentials.For(s.Provider).Read() is not null };
 }
