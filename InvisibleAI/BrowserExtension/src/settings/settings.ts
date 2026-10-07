@@ -17,7 +17,7 @@ function setPreferences(data: Record<string, unknown>): void {
   node<HTMLSelectElement>("answerMode").value = String(data.answerMode ?? "Quick");
   node<HTMLSelectElement>("programmingLanguage").value = String(data.programmingLanguage ?? "Auto Detect");
   node<HTMLInputElement>("responseOpacity").value = String(Math.round(Number(data.responseOpacity ?? .55) * 100));
-  node<HTMLInputElement>("privateResponses").checked = data.privateResponses === true;
+  node<HTMLInputElement>("privateResponses").checked = data.privateResponses !== false;
 }
 function preferences(): Record<string, unknown> {
   return { responseSeconds: Number(duration.value), answerMode: node<HTMLSelectElement>("answerMode").value, programmingLanguage: node<HTMLSelectElement>("programmingLanguage").value, responseOpacity: Number(node<HTMLInputElement>("responseOpacity").value) / 100, privateResponses: node<HTMLInputElement>("privateResponses").checked };

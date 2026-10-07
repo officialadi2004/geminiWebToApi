@@ -14,13 +14,13 @@ Nothing is drawn at idle. Ordinary Ctrl+C/V/X/Z remain untouched. The text short
 
 ```text
 Chrome / Edge Manifest V3 extension
-  → Native Messaging helper (headless by default)
+  → silent Native Messaging helper (no visible UI at idle)
   → existing AIService
   → Gemini Web (authenticated session cookies) OR Groq (official API)
-  → browser viewport overlay OR optional private Windows answer window
+  → private Windows answer window (default) OR explicit browser-overlay opt-out
 ```
 
-Provider code, authentication, model discovery, credential isolation, cancellation and Windows Credential Manager are reused. There is no fallback between providers or models. No WPF companion, tray, global keyboard hook, desktop clipboard/capture service, startup registration, localhost server or manual Python worker setup has been restored. Optional private mode adds one small WinForms/Win32 answer window inside the existing helper process, created only on explicit AI invocation. It exits with the browser connection. The existing one-click per-user installer remains necessary for private Windows credential storage and the maintained Gemini Web runtime.
+Provider code, authentication, model discovery, credential isolation, cancellation and Windows Credential Manager are reused. There is no fallback between providers or models. No WPF companion, tray, global keyboard hook, desktop clipboard/capture service, startup registration, localhost server or manual Python worker setup has been restored. Private mode adds one small WinForms/Win32 answer window inside the existing helper process, created only on explicit AI invocation. It exits with the browser connection. The existing one-click per-user installer remains necessary for private Windows credential storage and the maintained Gemini Web runtime.
 
 In standard browser mode, the helper's unified response retains `content`, `provider`, `model`, `usage`, `finishReason` and adds optional `details` for hover explanations. Internal image MCQ responses include visible option evidence from the multimodal model; the service validates labels before presenting them. Text MCQ labels are checked against the copied question locally. No OCR service or additional provider is introduced.
 
@@ -73,7 +73,7 @@ Credentials remain encrypted in the current Windows user's Credential Manager, w
 
 ## Fullscreen, capture permission and sharing limitations
 
-F11 stays active: answers are browser page content, and production code never changes fullscreen state, navigates, opens a tab/popup or focuses an answer. DOM fullscreen moves the overlay into `document.fullscreenElement`. Some replaced-element fullscreen surfaces (e.g. video), restricted/managed pages, extension stores and pages removing injected content may prevent display. No protected/DRM/secure-desktop/lockdown restriction is bypassed.
+F11 stays active: production code never changes fullscreen state, navigates, opens a tab/popup or focuses an answer. Private answers use the native window over the browser client area. With the explicit browser-overlay opt-out, answers are page content and DOM fullscreen moves the overlay into `document.fullscreenElement`. Some replaced-element fullscreen surfaces (e.g. video), restricted/managed pages, extension stores and pages removing injected content may prevent browser display; protected/exclusive surfaces can prevent native display. No protected/DRM/secure-desktop/lockdown restriction is bypassed.
 
 [Chrome's activeTab permission](https://developer.chrome.com/docs/extensions/develop/concepts/activeTab) is granted by an actual assigned extension command or toolbar invocation. The trusted top-frame Ctrl+Shift+V / S page listener is a fallback for shortcut conflicts; a page key event alone **does not grant capture permission**. If image capture is unavailable, assign the command in browser shortcut settings, or explicitly click the extension toolbar icon once on the current page to grant activeTab, then retry. No broad `host_permissions`, debugger permission or automatic permission prompt was added. Focused cross-origin frames may require the actual browser command. Default page fallback chords remain V/S even if browser command bindings are changed.
 
@@ -82,11 +82,11 @@ F11 stays active: answers are browser page content, and production code never ch
 ## Private answers while sharing the entire screen
 
 1. Install the updated helper and reload the updated extension; refresh previously open question tabs.
-2. In Settings, check **Private Windows response window**, then click **Save preferences** under Advanced (or Connect / Save). The default for existing/new installations remains standard browser mode until explicitly enabled.
+2. **Hide responses from supported screen capture** is enabled by default for new settings and legacy settings without an explicit choice. A previously saved opt-out is preserved; enable it in Settings and click **Save preferences** if needed. This requested upgrade enables private mode on this user installation. Turning it off explicitly selects browser answers, which are visible in sharing.
 3. Use the same Ctrl+C → Ctrl+Shift+V or Ctrl+Shift+S workflow. Answers and the processing dot now appear in a tiny native window over the browser viewport. They never become webpage content. Private completion messages contain only `{privateResponses:true, displayed:true}`, without answer/details/code. A private request cannot be downgraded by a concurrent settings change.
 4. Hover pauses expiry and shows details; leave resumes the remaining timer. Compact text is 10px, borderless, translucent and click-through; short MCQs stay small on hover. Expanded details support scrolling and numbered Copy buttons for multiple fenced code blocks. Ctrl+Shift+H hides/cancels the answer; disconnecting the host destroys its window. Provider errors stay in the native window or extension badge rather than on the shared page.
 
-Requires **Windows 10 version 2004/build 19041 or newer**, DWM composition and an ordinary interactive desktop. The helper sets and verifies [`WDA_EXCLUDEFROMCAPTURE`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity) on its own layered top-level window **while hidden, before showing it or uploading input**. Unsupported Windows/capture-exclusion failures stop the private request; there is no fallback to a browser answer or weaker exclusion flag. It uses no screen-share detection, sharing-app patches, global input hooks, recording service, secure-desktop bypass or protected-surface bypass. F11 is not changed; the window follows the browser client rectangle, monitor coordinates and per-monitor DPI. A native window may still be blocked above protected/exclusive surfaces.
+Requires **Windows 10 version 2004/build 19041 or newer**, DWM composition and an ordinary interactive desktop. The helper sets and verifies [`WDA_EXCLUDEFROMCAPTURE`](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setwindowdisplayaffinity) on its own layered top-level window **while hidden, before showing it or uploading input**. Every newly created/recreated HWND starts hidden and receives exclusion before display; showing verifies it again. DWM composition and affinity are checked while visible, and protection loss hides the response. Topmost state is restored without activation only if lost during the active browser workflow. The host is a Windows GUI executable with inherited Native Messaging stdin/stdout, so no console/VBS launcher is needed. Unexpected native UI exceptions terminate its display rather than opening an unprotected exception dialog. Unsupported Windows/capture-exclusion failures stop the private request; there is no fallback to a browser answer or weaker exclusion flag. It uses no screen-share detection, sharing-app patches, global input hooks, recording service, secure-desktop bypass or protected-surface bypass. F11 is not changed; the window follows the browser client rectangle, monitor coordinates and per-monitor DPI. A native window may still be blocked above protected/exclusive surfaces.
 
 **This is capture exclusion supported by Windows, not a guarantee against every recorder.** Microsoft explicitly does not guarantee strict protection across all capture methods. An excluded window may be omitted or blacked out by a capturer. Cameras and unsupported capture paths can still see it. A successful local screenshot check does not certify Google Meet, Chrome/Edge versions, graphics drivers or the viewer's received video.
 
@@ -120,6 +120,15 @@ Build runs Ruff, Python tests, complete .NET build/tests, npm lint, TypeScript c
 
 ## Exact test commands / manual acceptance
 
+To explicitly test the browsers' entire-screen capture pipeline on an interactive, single-monitor Windows desktop:
+
+```powershell
+./InvisibleAI/Scripts/Test-ScreenShare.ps1 -Browser Chrome
+./InvisibleAI/Scripts/Test-ScreenShare.ps1 -Browser Edge
+```
+
+Include `-Dotnet "$PWD/.tools/dotnet/dotnet.exe"` in this workspace. This launches a disposable browser profile and a test-only synthetic native window. Chromium's documented test switches select the monitor; production never uses those switches or starts screen sharing. Local `getDisplayMedia` frames are sampled only inside an owned opaque fixture rectangle, with an unexcluded positive control and repeated excluded controls. Capture tracks and fixture processes are stopped in `finally`. No image/video files, provider input or credentials are recorded; only geometry/aggregate-pixel test results are saved under ignored `artifacts/qa`. The helper has no capture-fixture mode; it exists solely in the test executable. An actual Meet recipient check remains separate. Run UI/browser/capture tests sequentially because they share the desktop/pointer.
+
 ```powershell
 ./InvisibleAI/Scripts/Test-Browser.ps1 -Browser Edge
 ./InvisibleAI/Scripts/Test-Browser.ps1 -Browser Chrome
@@ -151,4 +160,4 @@ Repeat manually in **Chrome normal, Chrome F11, Edge normal, Edge F11**, for eac
 - `LocalHelper/Session.cs`, `Program.cs`, `Settings/*`, `Shared/Protocol/*`: private screenshot transport, buffer/task cleanup, validated preferences and migration.
 - `Tests/UpgradeTests.cs`, existing tests, browser unit/integration tests and README/verification documentation.
 
-The previous companion/tray/screen-capture architecture was not restored; optional private mode adds only a transient answer HWND inside the existing helper. Existing authentication, provider routing, secure storage, ordinary text workflow and installer remain.
+The previous companion/tray/screen-capture architecture was not restored; private mode adds only a transient answer HWND inside the existing helper. Existing authentication, provider routing, secure storage, ordinary text workflow and installer remain.

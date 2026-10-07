@@ -13,6 +13,7 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        if (args.Contains("--screen-share-fixture")) return await NativeCaptureFixture.RunAsync();
         if (args.Contains("--native-fixture") || args.Contains(ExtensionIdentity.Origin)) {
             if (!args.Contains(ExtensionIdentity.Origin)) return 1;
             using var display = new InvisibleAI.Helper.Display.WindowsPrivateResponseDisplay();

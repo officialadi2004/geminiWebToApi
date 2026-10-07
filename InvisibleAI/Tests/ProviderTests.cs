@@ -33,6 +33,7 @@ internal static class ProviderTests
     public static async Task SessionWorkflow()
     {
         var x = Create(); string directory = Path.Combine(Path.GetTempPath(), "InvisibleAI-session-test-" + Guid.NewGuid()); var store = new SettingsStore(directory);
+        store.Save(new AppSettings { PrivateResponses = false }); // Exercise the explicitly selected browser mode.
         var session = new InvisibleAI.Helper.Session(x.Service, store, x.Vault);
         async Task<Message> Ask(string type, object? payload = null) => await session.HandleAsync(Message.Create(type, Guid.NewGuid().ToString(), payload), default);
         try
@@ -89,7 +90,7 @@ internal static class ProviderTests
     private const string VisionModel = "account-vision-model";
     private const string GeminiModel = "gemini-account-model";
     private static void Check(bool ok, string message) { if (!ok) throw new Exception(message); }
-    private static AppSettings Config(string provider = Providers.Groq, string model = TextModel) => new() { Provider = provider, Model = model, GroqModel = TextModel, GeminiModel = GeminiModel, ScreenshotEnabled = true };
+    private static AppSettings Config(string provider = Providers.Groq, string model = TextModel) => new() { Provider = provider, Model = model, GroqModel = TextModel, GeminiModel = GeminiModel, ScreenshotEnabled = true, PrivateResponses = false };
     private static string Json(object value) => JsonSerializer.Serialize(value, Message.Json);
     private static void Safe(string output) => Check(!output.Contains(Key) && !output.Contains(Sid) && !output.Contains("synthetic-ts-sentinel"), "Credential sentinel exposed.");
     private static async Task<string> Rejected(Func<Task> action)

@@ -17,15 +17,34 @@ internal static class PrivateDisplayTests
 {
     public static readonly (string Name, Func<Task> Run)[] All = [
         ("Private display: Gemini/Groq text and images never return answers to browser", Routing),
-        ("Private display: failure stops upload; cancellation and privacy gates hide safely", Failure)
+        ("Private display: failure stops upload; cancellation and privacy gates hide safely", Failure),
+        ("Private defaults: missing/legacy settings are private; explicit opt-out is preserved", Defaults)
     ];
     // Requires a real interactive Windows desktop. CI's service session is not a display test.
     public static readonly (string Name, Func<Task> Run)[] WindowsUI = [
         ("Windows private HWND: exclusion, no activation, stale IDs, hide and disposal", NativeWindow),
         ("Windows capture: excluded HWND absent from GDI crop; positive control visible", Capture),
-        ("Windows private hover: compact MCQ, paused expiry, resumed remaining time", Hover)
+        ("Windows private hover: compact MCQ, paused expiry, resumed remaining time", Hover),
+        ("Windows private lifecycle: hidden HWND creation/recreation and exclusion loss", Lifecycle)
     ];
     private static void Check(bool ok, string message) { if (!ok) throw new Exception(message); }
+    private static Task Defaults()
+    {
+        string directory = Path.Combine(Path.GetTempPath(), "InvisibleAI-private-default-" + Guid.NewGuid());
+        try
+        {
+            var store = new SettingsStore(directory);
+            Check(new AppSettings().PrivateResponses && store.Load().PrivateResponses, "New settings are not private.");
+            Directory.CreateDirectory(directory);
+            File.WriteAllText(store.Path, "{\"preferencesVersion\":4,\"networkEnabled\":false,\"responseSeconds\":5,\"responseOpacity\":0.5}");
+            var loaded = store.Load();
+            Check(loaded.PrivateResponses && !loaded.NetworkEnabled && loaded.ResponseSeconds == 5 && loaded.ResponseOpacity == .5, "Legacy default or customized privacy/appearance lost.");
+            loaded.PrivateResponses = false; store.Save(loaded);
+            Check(!store.Load().PrivateResponses && !store.Load().NetworkEnabled, "Explicit opt-out was overwritten.");
+        }
+        finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
+        return Task.CompletedTask;
+    }
     private sealed class Provider(string name) : IAIProvider
     {
         public string Name => name;
@@ -134,7 +153,7 @@ internal static class PrivateDisplayTests
     }
     private sealed class TestSurface : System.Windows.Forms.Form
     {
-        public TestSurface() { FormBorderStyle = System.Windows.Forms.FormBorderStyle.None; ShowInTaskbar = false; TopMost = true; BackColor = Color.White; }
+        public TestSurface() { FormBorderStyle = System.Windows.Forms.FormBorderStyle.None; ShowInTaskbar = false; TopMost = true; BackColor = Color.White; AutoScaleMode = System.Windows.Forms.AutoScaleMode.None; StartPosition = System.Windows.Forms.FormStartPosition.Manual; }
         protected override bool ShowWithoutActivation => true;
         protected override System.Windows.Forms.CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000000 | 0x80; return p; } }
     }
@@ -168,9 +187,17 @@ internal static class PrivateDisplayTests
                 return pixels;
             }
             await Task.Delay(200); byte[] excluded = Snapshot();
-            await display.InspectAsync((window, _, _) => Check(WindowsPrivateResponseDisplay.Native.SetWindowDisplayAffinity(window, 0), "Positive control unavailable."));
-            await Task.Delay(200); byte[] included = Snapshot();
+            byte[] included = [];
+            await display.InspectAsync((window, _, _) =>
+            {
+                // Keep the synthetic positive control inside one UI turn, restoring exclusion
+                // before the production protection watchdog executes. Never use real answers.
+                Check(WindowsPrivateResponseDisplay.Native.SetWindowDisplayAffinity(window, 0), "Positive control unavailable.");
+                try { DwmFlush(); included = Snapshot(); }
+                finally { Check(WindowsPrivateResponseDisplay.Native.SetWindowDisplayAffinity(window, 0x11), "Cannot restore positive control exclusion."); }
+            });
             await display.HideAsync("capture"); await Task.Delay(200); byte[] baseline = Snapshot();
+            Check(System.Linq.Enumerable.All(baseline, value => value == 255), "Capture fixture did not cover its owned rectangle.");
             Check(!System.Linq.Enumerable.SequenceEqual(included, baseline), "Capture positive control did not show the synthetic answer.");
             Check(System.Linq.Enumerable.SequenceEqual(excluded, baseline), "This capture method included the excluded answer.");
         }
@@ -182,6 +209,36 @@ internal static class PrivateDisplayTests
     [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr window);
     [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr window, IntPtr dc);
     [DllImport("gdi32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool BitBlt(IntPtr destination, int x, int y, int width, int height, IntPtr source, int sourceX, int sourceY, uint operation);
+    [DllImport("dwmapi.dll")] private static extern int DwmFlush();
+    private static async Task Lifecycle()
+    {
+        using var display = new WindowsPrivateResponseDisplay();
+        var foreground = WindowsPrivateResponseDisplay.Native.GetForegroundWindow();
+        await display.InspectAsync((window, _, visible) =>
+        {
+            Check(!visible && !WindowsPrivateResponseDisplay.Native.IsWindowVisible(window), "New HWND was revealed before exclusion.");
+            Check(WindowsPrivateResponseDisplay.Native.GetWindowDisplayAffinity(window, out uint affinity) && affinity == 0x11, "New hidden HWND is not excluded.");
+        });
+        await display.BeginAsync("lifecycle", new() { ResponseSeconds = 30 }, default);
+        await display.AnswerAsync("lifecycle", new("SYNTHETIC LIFECYCLE", []), default);
+        await display.InspectAsync((window, _, _) =>
+        {
+            var form = System.Windows.Forms.Control.FromHandle(window)!;
+            typeof(System.Windows.Forms.Control).GetMethod("RecreateHandle", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!.Invoke(form, null);
+        });
+        await display.InspectAsync((window, _, visible) =>
+        {
+            Check(visible, "Recreated HWND did not preserve the response.");
+            Check(WindowsPrivateResponseDisplay.Native.GetWindowDisplayAffinity(window, out uint affinity) && affinity == 0x11, "Recreated HWND lost exclusion.");
+            Check(WindowsPrivateResponseDisplay.Native.GetForegroundWindow() == foreground, "Recreated HWND stole focus.");
+            Check(WindowsPrivateResponseDisplay.Native.SetWindowDisplayAffinity(window, 0), "Could not simulate exclusion loss.");
+        });
+        await Task.Delay(400);
+        await display.InspectAsync((_, _, visible) => Check(!visible, "Exclusion loss left the answer visible."));
+        await display.BeginAsync("recovery", new(), default);
+        await display.InspectAsync((window, _, visible) => Check(visible && WindowsPrivateResponseDisplay.Native.GetWindowDisplayAffinity(window, out uint affinity) && affinity == 0x11, "New request did not recover exclusion safely."));
+        await display.HideAsync();
+    }
     private static async Task Hover()
     {
         var pointer = System.Windows.Forms.Cursor.Position;

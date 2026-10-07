@@ -68,7 +68,8 @@ async function ask(selectedTab?: chrome.tabs.Tab, image = false): Promise<void> 
   try {
     const preferences = await send(wire("PING"));
     if (active.get(tabId) !== id) return;
-    privateResponses = preferences.privateResponses === true;
+    // Only an explicit opt-out may draw answers into the shared webpage.
+    privateResponses = preferences.privateResponses !== false;
     // Command invocation grants activeTab. Nothing is injected or read at idle.
     if (!selectedTab) await chrome.scripting.executeScript({ target: { tabId }, files: ["src/content/overlay.js"] });
     if (privateResponses) await display(tabId, id, "prepare");

@@ -28,6 +28,8 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
                 Native.SetThreadDpiAwarenessContext(new IntPtr(-4));
                 try
                 {
+                    // Never let WinForms expose an exception in a separate unprotected dialog.
+                    Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException, true);
                     using var window = new AnswerWindow();
                     _ = window.Handle; // Hidden until Begin has verified capture exclusion.
                     window.BeginInvoke(() => source.TrySetResult(window));
@@ -81,15 +83,55 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
         private float scale = 1;
         private bool choice;
         private bool processing, expanded;
+        private bool captureReady;
+        private double lastProtectionCheck;
         public AnswerWindow()
         {
-            FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true;
+            FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; TopMost = true; StartPosition = FormStartPosition.Manual;
             BackColor = Color.Magenta; TransparencyKey = BackColor; AutoScaleMode = AutoScaleMode.None;
             DoubleBuffered = true; AccessibleName = "Invisible AI private response";
             timer.Tick += Tick;
         }
         protected override bool ShowWithoutActivation => true;
-        protected override CreateParams CreateParams { get { var p = base.CreateParams; p.ExStyle |= 0x08000000 | 0x80 | 0x80000 | Transparent; return p; } }
+        protected override CreateParams CreateParams
+        {
+            get
+            {
+                var p = base.CreateParams;
+                p.Style &= ~0x10000000; // WS_VISIBLE: all new/recreated HWNDs start hidden.
+                p.ExStyle |= 0x08000000 | 0x80 | 0x80000 | Transparent;
+                return p;
+            }
+        }
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            // Apply before base handlers or a subsequent ShowWindow can reveal any content.
+            captureReady = ApplyCaptureExclusion();
+            base.OnHandleCreated(e);
+        }
+        protected override void OnHandleDestroyed(EventArgs e)
+        {
+            captureReady = false;
+            base.OnHandleDestroyed(e);
+        }
+        protected override void SetVisibleCore(bool value)
+        {
+            if (value)
+            {
+                _ = Handle;
+                captureReady = ApplyCaptureExclusion();
+                if (!captureReady) throw new AIProviderException("Private display unavailable. Windows capture exclusion is required.");
+            }
+            base.SetVisibleCore(value);
+            if (value) Native.SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x213); // No activation or owner changes.
+        }
+        private bool ApplyCaptureExclusion() => OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) &&
+            Native.DwmIsCompositionEnabled(out bool composing) == 0 && composing &&
+            Native.SetWindowDisplayAffinity(Handle, 0x11) &&
+            Native.GetWindowDisplayAffinity(Handle, out uint affinity) && affinity == 0x11;
+        private bool CaptureExclusionIntact() => IsHandleCreated &&
+            Native.DwmIsCompositionEnabled(out bool composing) == 0 && composing &&
+            Native.GetWindowDisplayAffinity(Handle, out uint affinity) && affinity == 0x11;
         protected override void WndProc(ref System.Windows.Forms.Message m)
         {
             if (m.Msg == 0x21) { m.Result = new IntPtr(3); return; } // MA_NOACTIVATE
@@ -100,17 +142,18 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             HideAnswer(null);
             // Verify while hidden. Never downgrade to WDA_MONITOR or an unprotected surface.
             Opacity = settings.ResponseOpacity;
-            if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 19041) ||
-                !Native.SetWindowDisplayAffinity(Handle, 0x11) ||
-                !Native.GetWindowDisplayAffinity(Handle, out uint affinity) || affinity != 0x11)
+            captureReady = ApplyCaptureExclusion();
+            if (!captureReady)
                 throw new AIProviderException("Private display unavailable. Windows capture exclusion is required.");
             request = id; browser = foreground; duration = settings.ResponseSeconds;
-            processing = true; last = Seconds();
+            processing = true; last = Seconds(); lastProtectionCheck = last;
             Position(); Show(); timer.Start();
         }
         public void Answer(string id, AIAnswer answer)
         {
             if (request != id) return;
+            captureReady = CaptureExclusionIntact();
+            if (!captureReady) { HideAnswer(id); throw new AIProviderException("Private display unavailable. Windows capture exclusion was lost."); }
             summary = answer.Text; body = string.IsNullOrWhiteSpace(answer.Details) ? answer.Text : answer.Text + "\n" + answer.Details;
             choice = Regex.IsMatch(summary, @"\A(?:[A-Z]|[1-9][0-9]?)(?:, (?:[A-Z]|[1-9][0-9]?))*\z", RegexOptions.CultureInvariant);
             codes = Regex.Matches(body, @"```[^\r\n`]*\r?\n([\s\S]*?)```", RegexOptions.CultureInvariant)
@@ -128,6 +171,7 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
         {
             long style = Native.GetWindowLongPtr(Handle, -20).ToInt64();
             Native.SetWindowLongPtr(Handle, -20, new IntPtr(value ? style | Transparent : style & ~Transparent));
+            Native.SetWindowPos(Handle, IntPtr.Zero, 0, 0, 0, 0, 0x237); // Apply styles without focus/Z-order changes.
         }
         private static double Seconds() => (double)Stopwatch.GetTimestamp() / Stopwatch.Frequency;
         private void Tick(object? sender, EventArgs e)
@@ -136,6 +180,14 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             // Poll only our transient bounds, rather than intercepting mouse input or hooks.
             bool hover = !processing && Bounds.Contains(MousePosition);
             double now = Seconds();
+            if (now - lastProtectionCheck >= .25)
+            {
+                lastProtectionCheck = now; captureReady = CaptureExclusionIntact();
+                if (!captureReady) { HideAnswer(null); return; }
+                // Restore lost topmost status only during this browser workflow; do not fight other apps.
+                if (Native.GetForegroundWindow() == browser && (Native.GetWindowLongPtr(Handle, -20).ToInt64() & 8) == 0)
+                    Native.SetWindowPos(Handle, new IntPtr(-1), 0, 0, 0, 0, 0x213);
+            }
             if (!processing && !expanded && !hover) remaining -= now - last;
             last = now;
             if (!processing && remaining <= 0) { HideAnswer(null); return; }
@@ -181,6 +233,9 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
         protected override void OnPaint(PaintEventArgs e)
         {
             base.OnPaint(e);
+            if (!captureReady) return;
+            // Avoid blending antialiased text against the transparent magenta color key.
+            e.Graphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.SingleBitPerPixelGridFit;
             using var ink = new SolidBrush(Color.FromArgb(114, 121, 133));
             if (processing)
             {
@@ -219,6 +274,7 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
         [StructLayout(LayoutKind.Sequential)] internal struct Rect { public int Left, Top, Right, Bottom; }
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool SetWindowDisplayAffinity(IntPtr window, uint affinity);
         [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool GetWindowDisplayAffinity(IntPtr window, out uint affinity);
+        [DllImport("dwmapi.dll")] internal static extern int DwmIsCompositionEnabled([MarshalAs(UnmanagedType.Bool)] out bool enabled);
         [DllImport("user32.dll")] internal static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
         [DllImport("user32.dll")] internal static extern IntPtr GetForegroundWindow();
         [DllImport("user32.dll")] internal static extern uint GetDpiForWindow(IntPtr window);

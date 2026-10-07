@@ -24,7 +24,7 @@ public sealed class AppSettings
     public bool ScreenshotEnabled { get; set; } = true;
     public bool NetworkEnabled { get; set; } = true;
     public bool WebSearch { get; set; }
-    public bool PrivateResponses { get; set; }
+    public bool PrivateResponses { get; set; } = true;
     [System.Text.Json.Serialization.JsonIgnore]
     public string GeminiPythonPath { get; set; } = "";
     public AppSettings Clone() => (AppSettings)MemberwiseClone();
