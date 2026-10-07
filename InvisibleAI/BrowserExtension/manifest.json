@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Invisible AI Assistant",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "minimum_chrome_version": "116",
   "description": "Copy a question, press Ctrl+Shift+V, and see a tiny answer inside your current page.",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAvKYUUKlnoi10ri7mU84qass26uUZJZOAvm6XhVDaWY+NQsB0ANf0IqEFDhE54C5aRvfrVD67iTxBWrKtzDtOpBpX9DtE9faSQY0pHzzFF9cz4PXhjs5PDLbwPe2zRSylKIif3D2NqmaPoR/hrhcjoHTnWzHYSEYKnsAkDVDrvhkpviQB4HQ7hr+BtPVHlXXAAByFtFrTxispZbK8Ji8bMZdMr/CFM2NsxbAYwwKF3Ee0qUoVv62Y0KawtAKwZFijuwFFt2c6U0O5zMeKo5vPHfZU3PcVC72ptoFTi+3TxaKQhuhnGvTdX9lC3/LGOwVFjEhHdulBjXaCgfeYThYl8QIDAQAB",
@@ -10,6 +10,7 @@
     "scripting",
     "nativeMessaging",
     "clipboardRead",
+    "clipboardWrite",
     "offscreen"
   ],
   "background": {
@@ -32,6 +33,10 @@
         "default": "Ctrl+Shift+H"
       },
       "description": "Hide the answer"
+    },
+    "ask-region": {
+      "suggested_key": { "default": "Ctrl+Shift+S" },
+      "description": "Answer a question from a selected page region"
     }
   },
   "content_scripts": [

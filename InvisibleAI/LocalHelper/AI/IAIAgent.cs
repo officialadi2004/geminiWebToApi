@@ -2,9 +2,9 @@ using InvisibleAI.Helper.Settings;
 
 namespace InvisibleAI.Helper.AI;
 
-public sealed record AIAnswer(string Text, IReadOnlyList<AISource> Sources, string Provider = "", string Model = "", AIUsage? Usage = null, string FinishReason = "stop")
+public sealed record AIAnswer(string Text, IReadOnlyList<AISource> Sources, string Provider = "", string Model = "", AIUsage? Usage = null, string FinishReason = "stop", string? Details = null)
 {
-    public object ToUnifiedResponse() => new { content = Text, provider = Provider, model = Model, usage = Usage, finishReason = FinishReason };
+    public object ToUnifiedResponse() => new { content = Text, provider = Provider, model = Model, usage = Usage, finishReason = FinishReason, details = Details };
 }
 public sealed record AISource(string Title, string Url);
 public interface IAIAgent

@@ -1,5 +1,6 @@
 :root { color-scheme: light; font-family: "Segoe UI", system-ui, sans-serif; color: #172b32; background: #f6f8f7; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; } main { padding: 24px; } .popup { width: 342px; } .settings main { max-width: 650px; margin: 52px auto; padding: 32px; }
 .eyebrow { display: flex; align-items: center; gap: 9px; font-size: 10px; font-weight: 700; letter-spacing: 1.6px; color: #376354; }
 .dot { width: 6px; height: 6px; border-radius: 50%; background: #29876c; flex-shrink: 0; }

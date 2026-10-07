@@ -21,10 +21,14 @@ public static class Framing
         int length = BinaryPrimitives.ReadInt32LittleEndian(header);
         if (length <= 0 || length > maxBytes) throw new ProtocolException("Message size is outside the allowed range.");
         var body = new byte[length];
-        await stream.ReadExactlyAsync(body, ct);
-        var message = JsonSerializer.Deserialize<Message>(body, Message.Json) ?? throw new ProtocolException("Empty message.");
-        message.Validate();
-        return message;
+        try
+        {
+            await stream.ReadExactlyAsync(body, ct);
+            var message = JsonSerializer.Deserialize<Message>(body, Message.Json) ?? throw new ProtocolException("Empty message.");
+            message.Validate();
+            return message;
+        }
+        finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(body); }
     }
     public static async Task WriteAsync(Stream stream, Message message, CancellationToken ct, int maxBytes = MaxResponseBytes)
     {

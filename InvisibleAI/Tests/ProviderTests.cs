@@ -29,7 +29,7 @@ internal static class ProviderTests
         using var json = JsonDocument.Parse(body); var content = json.RootElement.GetProperty("messages")[1].GetProperty("content");
         return content.ValueKind == JsonValueKind.String ? content.GetString()! : content[0].GetProperty("text").GetString()!;
     }
-    private static string FixtureAnswer(string text) => text.Contains("France") ? "C" : text.Contains("Python") ? "A" : text.Contains("A-F") ? "F" : text.Contains("one sentence") ? "Binary search repeatedly halves a sorted search range." : "O(log n)";
+    private static string FixtureAnswer(string text) => text.Contains("screenshot") ? Json(new { kind = "mcq", options = new[] { "A", "B", "C", "D" }, answers = new[] { "C" } }) : text.Contains("Write a Python") ? Json(new { kind = "code", content = "```python\ns = input(\"Enter string: \")\nprint(s[::-1])\n```" }) : text.Contains("programming languages") ? "A, C, D" : text.Contains("France") ? Json(new { kind = "mcq", options = new[] { "A", "B", "C", "D" }, answers = new[] { "C" }, explanation = "Paris is the capital of France." }) : text.Contains("Python") ? "A" : text.Contains("A-F") ? "F" : text.Contains("one sentence") ? "Binary search repeatedly halves a sorted search range." : "O(log n)";
     public static async Task SessionWorkflow()
     {
         var x = Create(); string directory = Path.Combine(Path.GetTempPath(), "InvisibleAI-session-test-" + Guid.NewGuid()); var store = new SettingsStore(directory);
@@ -48,6 +48,18 @@ internal static class ProviderTests
             await Rejected(() => Ask("CONNECT", new { provider = Providers.Groq, userId = "user-b" }));
             await Rejected(() => Ask("PING", new { credential = "request-read" }));
             await Rejected(() => Ask("TEXT_INPUT", new { text = "question", provider = Providers.Gemini }));
+            string png = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhS8AAAAASUVORK5CYII=";
+            await Ask("SETTINGS_UPDATE", new { screenshotEnabled = true, answerMode = "Detailed", programmingLanguage = "Python", responseSeconds = 22, responseOpacity = .94 });
+            Check(store.Load().ResponseMode == ResponseMode.DETAILED && store.Load().ProgrammingLanguage == "Python", "New preferences lost.");
+            await Rejected(() => Ask("SCREENSHOT_INPUT", new { imageBase64 = png })); // Current Groq text model.
+            foreach (string provider in new[] { Providers.Groq, Providers.Gemini })
+            {
+                await Ask("CONNECT", new { provider, model = provider == Providers.Groq ? VisionModel : GeminiModel });
+                var imageResult = await Ask("SCREENSHOT_INPUT", new { imageBase64 = png }); Safe(Json(imageResult));
+                Check(imageResult.Payload!.Value.GetProperty("result").GetProperty("content").GetString() == "C", "Image generation did not normalize option evidence.");
+            }
+            await Rejected(() => Ask("SCREENSHOT_INPUT", new { imageBase64 = "not-an-image" }));
+            await Rejected(() => Ask("SCREENSHOT_INPUT", new { imageBase64 = png, provider = Providers.Groq }));
             await Ask("SETTINGS_UPDATE", new { networkEnabled = false, clipboardEnabled = false });
             Check(!store.Load().NetworkEnabled && !store.Load().ClipboardEnabled, "Privacy preferences lost.");
             await Rejected(() => Ask("TEXT_INPUT", new { text = "private" }));
@@ -133,6 +145,8 @@ internal static class ProviderTests
         Check(!x.Worker.Request!.Contains(Key), "Groq key sent to Gemini.");
         Check(root.GetProperty("messages")[0].GetProperty("role").GetString() == "system" && root.GetProperty("messages")[1].GetProperty("content").GetString() == "diagram", "Messages interface broken.");
         Check(root.GetProperty("imageBase64").GetString()!.Length > 0, "Image missing.");
+        x.Worker.NoVision = true;
+        Check((await Rejected(() => x.Service.AskImageAsync([137,80,78,71,13,10,26,10], s, default))).Contains("does not support images"), "Gemini capability rejection missing.");
     }
     private static async Task Privacy()
     {
@@ -236,9 +250,9 @@ internal static class ProviderTests
     { public int Reads; public string? Read() { Reads++; return value; } public void Write(string secret) => value = secret; public void Delete() => value = null; }
     private sealed class Worker : IGeminiWorker
     {
-        public int Calls; public int FixtureDelay; public string? Request, Code; public bool Echo;
+        public int Calls; public int FixtureDelay; public string? Request, Code; public bool Echo, NoVision;
         public async Task<JsonDocument> InvokeAsync(object request, AppSettings settings, CancellationToken ct)
-        { ct.ThrowIfCancellationRequested(); Calls++; Request = Json(request); if (FixtureDelay > 0 && !Request.Contains("\"models\"")) await Task.Delay(FixtureDelay, ct); return JsonDocument.Parse(Code is not null ? Json(new { errorCode = Code, raw = Cookie }) : Request.Contains("\"models\"") ? Json(new { models = new[] { new { id = GeminiModel, name = "Account Gemini" } } }) : Json(new { content = Echo ? Cookie : FixtureAnswer(JsonDocument.Parse(Request).RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!) })); }
+        { ct.ThrowIfCancellationRequested(); Calls++; Request = Json(request); if (FixtureDelay > 0 && !Request.Contains("\"models\"")) await Task.Delay(FixtureDelay, ct); return JsonDocument.Parse(Code is not null ? Json(new { errorCode = Code, raw = Cookie }) : Request.Contains("\"models\"") ? Json(new { models = new[] { new { id = GeminiModel, name = "Account Gemini", supportsImages = !NoVision } } }) : Json(new { content = Echo ? Cookie : FixtureAnswer(JsonDocument.Parse(Request).RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!) })); }
     }
     private sealed class Transport : HttpMessageHandler
     {

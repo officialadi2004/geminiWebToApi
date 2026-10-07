@@ -20,6 +20,7 @@
     "type": {
       "enum": [
         "TEXT_INPUT",
+        "SCREENSHOT_INPUT",
         "PROCESSING_START",
         "PROCESSING_COMPLETE",
         "ERROR",
@@ -64,6 +65,37 @@
                 "type": "string",
                 "minLength": 1,
                 "maxLength": 50000
+              }
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "type": {
+            "const": "SCREENSHOT_INPUT"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "payload"
+        ],
+        "properties": {
+          "payload": {
+            "type": "object",
+            "required": [
+              "imageBase64"
+            ],
+            "properties": {
+              "imageBase64": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 6990508,
+                "pattern": "^[A-Za-z0-9+/]+={0,2}$"
               }
             },
             "additionalProperties": false

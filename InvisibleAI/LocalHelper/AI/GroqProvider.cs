@@ -47,7 +47,7 @@ public sealed class GroqProvider(HttpClient http, IProviderCredentials credentia
         string key = Key();
         var catalog = await GetModelsAsync(settings, ct);
         var selected = catalog.FirstOrDefault(m => m.Id == settings.Model) ?? throw new AIProviderException("Groq model unavailable. Refresh models and choose another model.");
-        if (image is not null && !selected.SupportsImages) throw new AIProviderException("This Groq model does not support images. Choose a vision model in extension settings.");
+        if (image is not null && !selected.SupportsImages) throw new AIProviderException("Selected model does not support images. Please choose an image-capable model.");
         if (settings.WebSearch && !selected.SupportsSearch) throw new AIProviderException("This Groq model does not support web search. Choose a model labeled Search or turn off web search.");
         var content = new List<object> { new { type = "text", text = text ?? "Analyze the selected screenshot. Answer its question or briefly describe it." } };
         if (image is not null) content.Add(new { type = "image_url", image_url = new { url = "data:image/png;base64," + Convert.ToBase64String(image) } });

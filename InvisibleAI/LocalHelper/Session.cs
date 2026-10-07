@@ -26,7 +26,7 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
             case "PING":
                 Fields(); return Message.Create("STATUS", message.Id, Public(store.Load()));
             case "SETTINGS_UPDATE":
-                Fields("enabled", "clipboardEnabled", "networkEnabled", "responseSeconds");
+                Fields("enabled", "clipboardEnabled", "screenshotEnabled", "networkEnabled", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity");
                 await configuration.WaitAsync(ct);
                 try {
                     var value = store.Load();
@@ -34,12 +34,14 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
                         if (p.Value.TryGetProperty("enabled", out var enabled)) value.Enabled = enabled.GetBoolean();
                         if (p.Value.TryGetProperty("clipboardEnabled", out var clipboard)) value.ClipboardEnabled = clipboard.GetBoolean();
                         if (p.Value.TryGetProperty("networkEnabled", out var network)) value.NetworkEnabled = network.GetBoolean();
+                        if (p.Value.TryGetProperty("screenshotEnabled", out var screenshot)) value.ScreenshotEnabled = screenshot.GetBoolean();
                         if (p.Value.TryGetProperty("responseSeconds", out var duration)) value.ResponseSeconds = duration.GetInt32();
+                        Preferences(value);
                     }
                     store.Save(value); return Message.Create("STATUS", message.Id, Public(value));
                 } finally { configuration.Release(); }
             case "CONNECT":
-                Fields("provider", "credential", "model", "responseSeconds");
+                Fields("provider", "credential", "model", "responseSeconds", "answerMode", "programmingLanguage", "responseOpacity");
                 await configuration.WaitAsync(ct);
                 try
                 {
@@ -65,6 +67,7 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
                     s.Model = selected;
                     if (provider == Providers.Groq) s.GroqModel = selected; else s.GeminiModel = selected;
                     if (p is not null && p.Value.TryGetProperty("responseSeconds", out var duration)) s.ResponseSeconds = duration.GetInt32();
+                    Preferences(s);
                     s.Validate(); store.Save(s);
                     return Message.Create("CONNECTED", message.Id, new { settings = Public(s), models, connected = true });
                 }
@@ -73,13 +76,37 @@ public sealed class Session(AIService ai, SettingsStore store, IProviderCredenti
                 Fields("text");
                 var settings = store.Load();
                 var result = await ai.AskTextAsync(Text("text"), settings, ct);
-                return Message.Create("PROCESSING_COMPLETE", message.Id, new { result = result.ToUnifiedResponse(), responseSeconds = settings.ResponseSeconds });
+                return Complete(result, settings);
+            case "SCREENSHOT_INPUT":
+                Fields("imageBase64");
+                var imageSettings = store.Load();
+                if (!imageSettings.Enabled || !imageSettings.NetworkEnabled || !imageSettings.ScreenshotEnabled) throw new AIProviderException("Image processing is disabled in extension settings.");
+                string encoded = Text("imageBase64");
+                if (encoded.Length is 0 or > 6990508) throw new AIProviderException("Could not read the selected region.");
+                byte[] image;
+                try { image = Convert.FromBase64String(encoded); }
+                catch (FormatException) { throw new AIProviderException("Could not read the selected region."); }
+                try
+                {
+                    ImageInput.Validate(image);
+                    return Complete(await ai.AskImageAsync(image, imageSettings, ct), imageSettings);
+                }
+                finally { System.Security.Cryptography.CryptographicOperations.ZeroMemory(image); }
             case "PROVIDER_API":
                 Fields("method", "path");
                 return Message.Create("PROVIDER_RESULT", message.Id, await new ProviderApi(ai).InvokeAsync(Text("method"), Text("path"), store.Load(), ct));
             default: throw new AIProviderException("Unknown request.");
         }
+        Message Complete(AIAnswer answer, AppSettings settings) => Message.Create("PROCESSING_COMPLETE", message.Id, new { result = answer.ToUnifiedResponse(), responseSeconds = settings.ResponseSeconds, responseOpacity = settings.ResponseOpacity });
+        void Preferences(AppSettings value)
+        {
+            if (p is null) return;
+            if (p.Value.TryGetProperty("answerMode", out var mode)) value.ResponseMode = mode.GetString() switch { "Quick" => ResponseMode.CONCISE, "Detailed" => ResponseMode.DETAILED, _ => throw new AIProviderException("Choose Quick or Detailed.") };
+            if (p.Value.TryGetProperty("programmingLanguage", out var language)) value.ProgrammingLanguage = language.GetString() ?? "";
+            if (p.Value.TryGetProperty("responseOpacity", out var opacity)) value.ResponseOpacity = opacity.GetDouble();
+        }
     }
     private object Public(AppSettings s) => new { provider = s.Provider, model = s.Model, responseSeconds = s.ResponseSeconds, enabled = s.Enabled, clipboardEnabled = s.ClipboardEnabled, networkEnabled = s.NetworkEnabled,
+        screenshotEnabled = s.ScreenshotEnabled, answerMode = s.ResponseMode == ResponseMode.DETAILED ? "Detailed" : "Quick", programmingLanguage = s.ProgrammingLanguage, responseOpacity = s.ResponseOpacity,
         credentialSaved = s.Provider.Length != 0 && credentials.For(s.Provider).Read() is not null };
 }

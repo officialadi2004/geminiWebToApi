@@ -24,7 +24,7 @@ public sealed class AIService : IAIAgent
         if (!Providers.ValidModelId(settings.Model)) throw new AIProviderException("Open extension settings and click Connect / Save.");
         ct.ThrowIfCancellationRequested();
         var answer = await Adapter(settings.Provider).GenerateAsync(text, image, settings.Clone(), ct);
-        return text is null ? answer : answer with { Text = AnswerPolicy.Normalize(text, answer.Text) };
+        return AnswerPolicy.Process(text, answer, settings, image is not null);
     }
     public async Task<IReadOnlyList<AIModel>> GetModelsAsync(AppSettings settings, CancellationToken ct)
     { CheckNetwork(settings); return await Adapter(settings.Provider).GetModelsAsync(settings.Clone(), ct); }

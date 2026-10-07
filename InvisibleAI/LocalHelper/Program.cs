@@ -22,7 +22,8 @@ public static class Program
         using var lifetime = new CancellationTokenSource();
         using var writes = new SemaphoreSlim(1, 1);
         var running = new ConcurrentDictionary<string, CancellationTokenSource>();
-        var tasks = new List<Task>();
+        var tasks = new ConcurrentDictionary<long, Task>();
+        long sequence = 0;
         async Task Write(Message m)
         {
             await writes.WaitAsync(lifetime.Token);
@@ -33,7 +34,7 @@ public static class Program
         {
             try
             {
-                if (m.Type == "TEXT_INPUT") await Write(Message.Create("PROCESSING_START", m.Id));
+                if (m.Type is "TEXT_INPUT" or "SCREENSHOT_INPUT") await Write(Message.Create("PROCESSING_START", m.Id));
                 await Write(await session.HandleAsync(m, request.Token));
             }
             catch (OperationCanceledException) { if (!lifetime.IsCancellationRequested) await Write(Message.Create("ERROR", m.Id, new { message = "Request cancelled." })); }
@@ -53,10 +54,14 @@ public static class Program
                 if (running.Count >= 16 || running.ContainsKey(m.Id)) { await Write(Message.Create("ERROR", m.Id, new { message = "Too many requests." })); continue; }
                 var cancel = CancellationTokenSource.CreateLinkedTokenSource(lifetime.Token);
                 cancel.CancelAfter(TimeSpan.FromSeconds(300));
-                running[m.Id] = cancel; tasks.RemoveAll(x => x.IsCompleted); tasks.Add(Dispatch(m, cancel));
+                running[m.Id] = cancel;
+                long taskId = ++sequence;
+                var task = Dispatch(m, cancel); tasks[taskId] = task;
+                // Drop completed state machines promptly rather than retaining request images until another message.
+                _ = task.ContinueWith(completed => { tasks.TryRemove(taskId, out _); }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
         }
         catch (Exception) { /* Never print protocol or upstream data to stdout/stderr. */ }
-        finally { lifetime.Cancel(); foreach (var request in running.Values) { try { request.Cancel(); } catch (ObjectDisposedException) { } } try { await Task.WhenAll(tasks); } catch (Exception) { } }
+        finally { lifetime.Cancel(); foreach (var request in running.Values) { try { request.Cancel(); } catch (ObjectDisposedException) { } } try { await Task.WhenAll(tasks.Values); } catch (Exception) { } }
     }
 }

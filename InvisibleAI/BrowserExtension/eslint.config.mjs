@@ -8,5 +8,5 @@ export default [
   ...ts.configs.recommended,
   { files: ["src/**/*.ts"], languageOptions: { globals: { ...globals.browser, chrome: "readonly" } } },
   { files: ["**/*.mjs"], languageOptions: { globals: globals.node } },
-  { files: ["scripts/browser-smoke.mjs"], languageOptions: { globals: { ...globals.node, ...globals.browser, chrome: "readonly" } } }
+  { files: ["scripts/browser*smoke.mjs"], languageOptions: { globals: { ...globals.node, ...globals.browser, chrome: "readonly" } } }
 ];

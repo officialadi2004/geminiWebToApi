@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param([string]$Dotnet = 'dotnet', [ValidateSet('Chrome','Edge')][string]$Browser = 'Edge')
+param([string]$Dotnet = 'dotnet', [ValidateSet('Chrome','Edge')][string]$Browser = 'Edge', [switch]$UpgradeOnly)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path $PSScriptRoot -Parent
 $qa = Join-Path $projectRoot 'artifacts\qa'
@@ -23,7 +23,8 @@ try {
     try {
         npm run build
         if ($LASTEXITCODE -ne 0) { throw 'Extension build failed.' }
-        if ($Browser -eq 'Edge') { node scripts/browser-smoke.mjs --edge } else { node scripts/browser-smoke.mjs }
+        $browserArguments = @(); if ($Browser -eq 'Edge') { $browserArguments += '--edge' }; if ($UpgradeOnly) { $browserArguments += '--upgrade-only' }
+        node scripts/browser-smoke.mjs @browserArguments
         if ($LASTEXITCODE -ne 0) { throw 'Browser smoke failed.' }
     } finally { Pop-Location }
 } finally {

@@ -11,8 +11,16 @@ public sealed class SettingsStore
     public AppSettings Load()
     {
         if (!File.Exists(Path)) return new();
-        var settings = JsonSerializer.Deserialize<AppSettings>(File.ReadAllText(Path), Shared.Protocol.Message.Json)
+        string json = File.ReadAllText(Path);
+        var settings = JsonSerializer.Deserialize<AppSettings>(json, Shared.Protocol.Message.Json)
             ?? throw new InvalidDataException("Settings are empty.");
+        // Migrate browser-first defaults once, retaining explicitly customized durations.
+        using var document = JsonDocument.Parse(json);
+        if (!document.RootElement.TryGetProperty("preferencesVersion", out _))
+        {
+            if (settings.ResponseSeconds == 12) settings.ResponseSeconds = 22;
+            settings.MaxResponseLength = 12000; settings.MaxOutputTokens = 4096;
+        }
         // Read existing provider preferences; old UI fields are ignored.
         if (settings.Provider == "OpenAI") { settings.Provider = ""; settings.Model = ""; }
         settings.Validate();

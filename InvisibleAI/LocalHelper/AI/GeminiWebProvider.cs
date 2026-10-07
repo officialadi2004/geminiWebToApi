@@ -77,13 +77,19 @@ public sealed class GeminiWebProvider(IGeminiWorker worker, IProviderCredentials
             string id = model.GetProperty("id").GetString() ?? "";
             if (!Providers.ValidModelId(id) || values.Values.Any(v => id.Contains(v, StringComparison.Ordinal))) continue;
             string name = model.TryGetProperty("name", out var value) ? value.GetString() ?? id : id;
-            result.Add(new(id, AIInstructions.Limit(CredentialRedaction.Scrub(name, cookie, true), 120), true, true));
+            bool images = !model.TryGetProperty("supportsImages", out var imagesValue) || imagesValue.ValueKind == JsonValueKind.True;
+            result.Add(new(id, AIInstructions.Limit(CredentialRedaction.Scrub(name, cookie, true), 120) + (images ? " · Images" : ""), images, true));
         }
         return result;
     }
     public async Task<AIAnswer> GenerateAsync(string? text, byte[]? image, AppSettings settings, CancellationToken ct)
     {
         string cookie = Cookie();
+        if (image is not null)
+        {
+            var selected = (await GetModelsAsync(settings, ct)).FirstOrDefault(m => m.Id == settings.Model) ?? throw new AIProviderException("Gemini model unavailable. Refresh models.");
+            if (!selected.SupportsImages) throw new AIProviderException("Selected model does not support images. Please choose an image-capable model.");
+        }
         using var json = await worker.InvokeAsync(new { operation = "generate", cookies = GeminiCookies.Parse(cookie), model = settings.Model,
             messages = new object[] { new { role = "system", content = AIInstructions.Build(settings) }, new { role = "user", content = text ?? "Analyze this screenshot. Answer its question or describe it briefly." } },
             imageBase64 = image is null ? null : Convert.ToBase64String(image), timeout = settings.RequestTimeoutSeconds }, settings, ct);

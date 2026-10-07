@@ -19,6 +19,7 @@ internal static class Program
         }
         int failed = 0;
         var tests = new List<(string Name, Func<Task> Run)>(ProviderTests.All) { ("Upgrade: retire only the installed companion and its own startup command", LegacyPaths), ("Framing: Unicode and fragmentation", FramingRoundTrip), ("Framing: invalid input", FramingInvalid), ("MCQ: arbitrary labels, true/false, ambiguity and concise text", Answers), ("Settings: persistence and validation", Settings), ("Windows: isolated Credential Manager round trip", Credentials), ("Helper: write-only credentials, routing and caller field rejection", ProviderTests.SessionWorkflow) };
+        tests.AddRange(UpgradeTests.All);
         foreach (var test in tests) try { await test.Run(); Console.WriteLine("PASS " + test.Name); } catch (Exception e) { failed++; Console.WriteLine("FAIL " + test.Name + ": " + e.Message); }
         Console.WriteLine($"{tests.Count - failed} passed; {failed} failed."); return failed == 0 ? 0 : 1;
     }
@@ -57,7 +58,7 @@ internal static class Program
             Assert(store.Load().Model == "test-model", "Settings lost.");
             Assert(!File.ReadAllText(store.Path).Contains("credential", StringComparison.OrdinalIgnoreCase), "Credential persisted.");
             Assert(Directory.GetFiles(directory).Length == 1, "Temporary file remains.");
-            foreach (var value in new[] { 0, 61 }) { s.ResponseSeconds = value; bool rejected = false; try { s.Validate(); } catch (ArgumentException) { rejected = true; } Assert(rejected, "Invalid duration accepted."); }
+            foreach (var value in new[] { 0, 121 }) { s.ResponseSeconds = value; bool rejected = false; try { s.Validate(); } catch (ArgumentException) { rejected = true; } Assert(rejected, "Invalid duration accepted."); }
         } finally { if (Directory.Exists(directory)) Directory.Delete(directory, true); }
         return Task.CompletedTask;
     }
