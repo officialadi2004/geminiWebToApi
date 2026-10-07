@@ -9,7 +9,7 @@ The extension never navigates, opens a tab or popup, requests fullscreen exit, o
 Requires Windows 10/11 x64, Chrome or Edge 116 or newer. The installer includes the .NET runtime and Gemini runtime; users do not install Python or .NET themselves.
 
 1. Download the Windows build artifact from this repository's GitHub Actions run, or use the locally built `InvisibleAI/artifacts/browser-first-release` folder. Extract the archive first.
-2. Double-click **InvisibleAI.Setup.exe** once. It installs the helper into `%LOCALAPPDATA%\InvisibleAI\helper` and registers it for Chrome and Edge under the current Windows user. No administrator access, PowerShell, Extension ID entry or manual Native Messaging registration is needed.
+2. Double-click **InvisibleAI.Setup.exe** once. It installs the helper into `%LOCALAPPDATA%\InvisibleAI\helper` and registers it for Chrome and Edge under the current Windows user. No administrator access, PowerShell, Extension ID entry or manual Native Messaging registration is needed. Upgrades stop the old invisible companion and remove its own startup entry, preserving provider credentials and preferences. Close any old companion settings window before upgrading.
 3. Restart Chrome/Edge after installation.
 4. Open **chrome://extensions** or **edge://extensions**, enable Developer mode, choose **Load unpacked**, and select the extracted **BrowserExtension** directory containing `manifest.json`. For a source build, choose `InvisibleAI/BrowserExtension/dist` instead.
 5. Open the extension's icon and choose **AI Provider settings**. Connect a provider as described below. You can close the settings tab afterward.
@@ -129,3 +129,7 @@ Live authentication, model permissions/quota and physical F11 behavior cannot be
 - `Tests/Program.cs`, `ProviderTests.cs`, `test_gemini_worker.py`, test project; `BrowserExtension/tests/*`, `scripts/browser-smoke.mjs`: reused/adapted provider/security tests plus actual browser integration harness.
 - `Scripts/Build.ps1`, `Publish.ps1`, `Test-Browser.ps1`, development requirements; extension package/build/lint/type configurations; solution, Git ignore/environment example, CI workflow and documentation.
 - Remaining tracked `WindowsCompanion` UI/tray/hotkey/capture/native-bridge source and the old installation/runtime-setup scripts removed.
+
+### Shortcut shows an old "Settings → AI" error
+
+If extension settings already show a saved provider/model but Ctrl+Shift+V still shows the old desktop message, an older `InvisibleAI.Companion.exe` tray application may still own the global shortcut and have cached pre-connection settings. Exit that old tray application; keep the browser extension and its headless helper. The updated installer retires the previously installed companion automatically. Do not launch the old `InvisibleAI/app/InvisibleAI.Companion.exe` again. The new extension stores the current configuration through the helper and needs no tray app.

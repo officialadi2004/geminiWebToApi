@@ -6,7 +6,7 @@ namespace InvisibleAI.Helper.AI;
 public static class Providers
 {
     public const string Gemini = "Gemini Web", Groq = "Groq";
-    public static string Id(string name) => name switch { Gemini => "gemini", Groq => "groq", _ => throw new AIProviderException("Choose Gemini Web or Groq in Settings → AI.") };
+    public static string Id(string name) => name switch { Gemini => "gemini", Groq => "groq", _ => throw new AIProviderException("Choose Gemini Web or Groq in extension settings.") };
     public static string Name(string id) => id switch { "gemini" => Gemini, "groq" => Groq, _ => throw new AIProviderException("Unknown AI provider.") };
     public static bool IsValid(string name) => name is Gemini or Groq;
     public static bool ValidModelId(string? id) => id is not null && Regex.IsMatch(id, @"\A[a-zA-Z0-9][a-zA-Z0-9_./:-]{0,119}\z");

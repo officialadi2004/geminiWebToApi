@@ -23,6 +23,7 @@ internal static class Program
                 return 0;
             }
             using var payload = Assembly.GetExecutingAssembly().GetManifestResourceStream("helper.zip") ?? throw new InvalidOperationException();
+            LegacyUpgrade.RetireCompanion(Path.GetDirectoryName(root)!);
             Directory.CreateDirectory(root);
             using (var archive = new ZipArchive(payload)) archive.ExtractToDirectory(root, overwriteFiles: true);
             string manifest = Path.Combine(root, "com.invisibleai.assistant.json");
@@ -33,7 +34,7 @@ internal static class Program
         }
         catch (Exception)
         {
-            if (!args.Contains("--quiet")) MessageBox(0, "Setup could not finish. Close Chrome and Edge and try again. Download a fresh package if the problem continues.", "Invisible AI Assistant", 0x10);
+            if (!args.Contains("--quiet")) MessageBox(0, "Setup could not finish. Close Chrome, Edge and any old Invisible AI settings window, then try again. Download a fresh package if the problem continues.", "Invisible AI Assistant", 0x10);
             return 1;
         }
     }

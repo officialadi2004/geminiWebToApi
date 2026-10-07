@@ -50,3 +50,11 @@ Both provider paths are independently covered with production adapters and mocke
 Windows Credential Manager encrypts per-user credentials. Fixed targets and rejection of caller user IDs/credential targets are tested, but a second real Windows login was not exercised. There is no database or public HTTP server, so SQL RLS does not apply. Saved credentials are never returned to extension UI, inserted into URLs or stored in browser localStorage.
 
 The installer was successfully run locally. It leaves the production helper registered under the current user's Chrome/Edge registry keys; no companion/tray/startup process runs. Test browser processes were closed and test registrations were restored before the production installer smoke. The installer is unsigned; store publication and managed-browser deployment remain outstanding distribution work.
+
+## Follow-up: legacy shortcut conflict
+
+The user's report of the old "Settings → AI" message was traced to a running, previously installed `InvisibleAI.Companion.exe`. Its cached settings and global hotkeys coexisted with the new helper. The saved helper configuration already had Groq and a valid model. The obsolete invisible process was stopped without modifying credentials or settings. No legacy startup entry was present on this machine.
+
+After retirement, the configured **real Groq account** passed the backend connection/catalog test and answered a synthetic France MCQ with **C** using `openai/gpt-oss-20b`. The result used the unified structure, and helper stderr remained empty. No real clipboard text was read for this diagnostic, and no credential was printed or returned. This adds authenticated Groq evidence; authenticated Gemini and physical F11 browser tests remain unverified. The earlier table describes the initial update's test run.
+
+The installer now retires only the current user's installed old companion path and matching startup command. It leaves unrelated executables/startup values and the new helper alone, and asks for an old visible window to be closed rather than discarding unsaved UI. A regression test verifies these path/command boundaries. The .NET suite now has 19 passing tests.

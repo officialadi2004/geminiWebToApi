@@ -21,7 +21,7 @@ public sealed class AIService : IAIAgent
         if (image is not null && !settings.ScreenshotEnabled) throw new AIProviderException("Screenshot processing is disabled.");
         if (string.IsNullOrWhiteSpace(text) && image is null) throw new AIProviderException("Supply text or an image.");
         if (text?.Length > 50000 || image?.Length > 5 * 1024 * 1024) throw new AIProviderException("Input exceeds the allowed size.");
-        if (!Providers.ValidModelId(settings.Model)) throw new AIProviderException("Connect your provider and choose an available model in Settings → AI.");
+        if (!Providers.ValidModelId(settings.Model)) throw new AIProviderException("Open extension settings and click Connect / Save.");
         ct.ThrowIfCancellationRequested();
         var answer = await Adapter(settings.Provider).GenerateAsync(text, image, settings.Clone(), ct);
         return text is null ? answer : answer with { Text = AnswerPolicy.Normalize(text, answer.Text) };
@@ -41,7 +41,7 @@ public sealed class AIService : IAIAgent
         catch (OperationCanceledException) when (!ct.IsCancellationRequested) { return new(false, id, "Provider connection timed out."); }
         catch (Exception) when (!ct.IsCancellationRequested) { return new(false, id, "Provider unavailable. Check your connection and try again."); }
     }
-    private IAIProvider Adapter(string name) => providers.TryGetValue(name, out var value) ? value : throw new AIProviderException("Choose Gemini Web or Groq in Settings → AI.");
+    private IAIProvider Adapter(string name) => providers.TryGetValue(name, out var value) ? value : throw new AIProviderException("Choose Gemini Web or Groq in extension settings.");
     private static void CheckNetwork(AppSettings settings)
-    { if (!settings.NetworkEnabled) throw new AIProviderException("Network requests are disabled in Settings → Privacy."); }
+    { if (!settings.NetworkEnabled) throw new AIProviderException("Network requests are disabled in extension settings (Advanced)."); }
 }

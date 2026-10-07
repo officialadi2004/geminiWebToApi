@@ -65,7 +65,7 @@ public sealed class GeminiWorkerProcess : IGeminiWorker
 public sealed class GeminiWebProvider(IGeminiWorker worker, IProviderCredentials credentials) : IAIProvider
 {
     public string Name => Providers.Gemini;
-    private string Cookie() => credentials.For(Name).Read() ?? throw new AIProviderException("Missing Gemini cookies. Add your own Gemini cookies in Settings → AI.");
+    private string Cookie() => credentials.For(Name).Read() ?? throw new AIProviderException("Missing Gemini cookies. Add your own Gemini cookies in extension settings.");
     public async Task<IReadOnlyList<AIModel>> GetModelsAsync(AppSettings settings, CancellationToken ct)
     {
         string cookie = Cookie(); var values = GeminiCookies.Parse(cookie);

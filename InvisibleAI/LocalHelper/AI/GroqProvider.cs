@@ -14,7 +14,7 @@ public sealed class GroqProvider(HttpClient http, IProviderCredentials credentia
     private string Key()
     {
         string? key = credentials.For(Name).Read();
-        if (string.IsNullOrWhiteSpace(key)) throw new AIProviderException("Missing Groq API key. Add your key in Settings → AI.");
+        if (string.IsNullOrWhiteSpace(key)) throw new AIProviderException("Missing Groq API key. Add your key in extension settings.");
         if (key.Length > 2000 || key.Any(c => c <= 32 || c >= 127)) throw new AIProviderException("Invalid Groq API key. Please check your key and try again.");
         return key;
     }
@@ -47,7 +47,7 @@ public sealed class GroqProvider(HttpClient http, IProviderCredentials credentia
         string key = Key();
         var catalog = await GetModelsAsync(settings, ct);
         var selected = catalog.FirstOrDefault(m => m.Id == settings.Model) ?? throw new AIProviderException("Groq model unavailable. Refresh models and choose another model.");
-        if (image is not null && !selected.SupportsImages) throw new AIProviderException("This Groq model does not support images. Choose a vision model in Settings → AI.");
+        if (image is not null && !selected.SupportsImages) throw new AIProviderException("This Groq model does not support images. Choose a vision model in extension settings.");
         if (settings.WebSearch && !selected.SupportsSearch) throw new AIProviderException("This Groq model does not support web search. Choose a model labeled Search or turn off web search.");
         var content = new List<object> { new { type = "text", text = text ?? "Analyze the selected screenshot. Answer its question or briefly describe it." } };
         if (image is not null) content.Add(new { type = "image_url", image_url = new { url = "data:image/png;base64," + Convert.ToBase64String(image) } });

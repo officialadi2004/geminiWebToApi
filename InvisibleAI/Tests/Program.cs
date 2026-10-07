@@ -18,12 +18,22 @@ internal static class Program
             await InvisibleAI.Helper.Program.RunAsync(ProviderTests.FixtureSession(), Console.OpenStandardInput(), Console.OpenStandardOutput()); return 0;
         }
         int failed = 0;
-        var tests = new List<(string Name, Func<Task> Run)>(ProviderTests.All) { ("Framing: Unicode and fragmentation", FramingRoundTrip), ("Framing: invalid input", FramingInvalid), ("MCQ: arbitrary labels, true/false, ambiguity and concise text", Answers), ("Settings: persistence and validation", Settings), ("Windows: isolated Credential Manager round trip", Credentials), ("Helper: write-only credentials, routing and caller field rejection", ProviderTests.SessionWorkflow) };
+        var tests = new List<(string Name, Func<Task> Run)>(ProviderTests.All) { ("Upgrade: retire only the installed companion and its own startup command", LegacyPaths), ("Framing: Unicode and fragmentation", FramingRoundTrip), ("Framing: invalid input", FramingInvalid), ("MCQ: arbitrary labels, true/false, ambiguity and concise text", Answers), ("Settings: persistence and validation", Settings), ("Windows: isolated Credential Manager round trip", Credentials), ("Helper: write-only credentials, routing and caller field rejection", ProviderTests.SessionWorkflow) };
         foreach (var test in tests) try { await test.Run(); Console.WriteLine("PASS " + test.Name); } catch (Exception e) { failed++; Console.WriteLine("FAIL " + test.Name + ": " + e.Message); }
         Console.WriteLine($"{tests.Count - failed} passed; {failed} failed."); return failed == 0 ? 0 : 1;
     }
     private static void Assert(bool ok, string message) { if (!ok) throw new Exception(message); }
     private static async Task Throws<T>(Func<Task> action) where T : Exception { try { await action(); } catch (T) { return; } throw new Exception("Expected " + typeof(T).Name); }
+    private static Task LegacyPaths()
+    {
+        string expected = @"C:\Users\Test User\AppData\Local\InvisibleAI\app\InvisibleAI.Companion.exe";
+        foreach (string command in new[] { "\"" + expected + "\" --background", expected + " --background", expected.ToUpperInvariant() })
+            Assert(InvisibleAI.Setup.LegacyUpgrade.MatchesStartup(command, expected), "Installed companion startup not recognized.");
+        foreach (string command in new[] { "\"C:/Other/InvisibleAI.Companion.exe\" --background", expected + ".backup", "\"C:/Other/tool.exe\" \"" + expected + "\"", "", "\"" + expected })
+            Assert(!InvisibleAI.Setup.LegacyUpgrade.MatchesStartup(command, expected), "Unrelated startup command would be removed.");
+        Assert(!InvisibleAI.Setup.LegacyUpgrade.MatchesExecutable(expected.Replace("Companion", "Helper"), expected), "New helper would be stopped.");
+        return Task.CompletedTask;
+    }
     private static Task Answers()
     {
         foreach (var (question, answer, expected) in new[] {
