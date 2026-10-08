@@ -52,16 +52,30 @@
       const box = document.createElement("div"); box.className = "code";
       const head = document.createElement("div"); head.className = "code-head";
       const language = document.createElement("span"); language.textContent = match[1].trim() || "Code";
-      const button = document.createElement("button"); button.type = "button"; button.tabIndex = -1; button.textContent = "Copy";
+      const button = document.createElement("button"); button.type = "button"; button.tabIndex = -1;
+      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+      icon.setAttribute("viewBox", "0 0 16 16"); icon.setAttribute("width", "12"); icon.setAttribute("height", "12"); icon.setAttribute("aria-hidden", "true");
+      icon.style.cssText = "vertical-align:middle;margin-right:4px;fill:none;stroke:currentColor;stroke-width:1.3";
+      const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); icon.append(path);
+      const label = document.createElement("span"); button.append(icon, label);
+      let resetCopy: ReturnType<typeof setTimeout> | undefined, copying = false;
+      function copyState(state: "copy" | "copied" | "failed"): void {
+        label.textContent = state === "copied" ? "Copied" : state === "failed" ? "Retry" : "Copy";
+        path.setAttribute("d", state === "copied" ? "M2 8l4 4L14 3" : "M5 5h8v9H5zM3 11H2V2h8v1");
+        button.setAttribute("aria-label", state === "copied" ? "Code copied" : state === "failed" ? "Copy failed. Try again." : "Copy code");
+        button.title = state === "copied" ? "Copied to clipboard" : state === "failed" ? "Could not copy. Click to retry." : "Copy code";
+      }
+      copyState("copy");
       // Exclude only the fence separator newline, preserving code indentation, quotes and tabs.
       const code = match[2].replace(/\r?\n$/, "");
       button.addEventListener("mousedown", e => e.preventDefault());
       button.addEventListener("click", event => {
-        if (!event.isTrusted) return;
+        if (!event.isTrusted || copying) return;
+        copying = true; clearTimeout(resetCopy);
         void chrome.runtime.sendMessage({ action: "copy-code", text: code }).then(result => {
           if (!result?.ok) throw new Error("Copy failed");
-          button.textContent = "Copied ✓"; setTimeout(() => { if (button.isConnected) button.textContent = "Copy"; }, 1400);
-        }).catch(() => { button.textContent = "Copy failed"; });
+          copyState("copied"); resetCopy = setTimeout(() => { if (button.isConnected) copyState("copy"); }, 1800);
+        }).catch(() => { copyState("failed"); }).finally(() => { copying = false; });
       });
       const pre = document.createElement("pre"); const node = document.createElement("code"); node.textContent = code; pre.append(node); head.append(language, button); box.append(head, pre); body.append(box);
       last = match.index! + match[0].length;

@@ -1,5 +1,18 @@
 # Verification record — browser-first update, 7 October 2026
 
+## Follow-up: working code Copy controls and visible feedback, 8 October 2026
+
+Native code controls previously painted their padding with the window transparency key, so mouse clicks in those pixels passed through to the underlying application. Only the small Copy controls now have a faint, non-color-key backing. Copy/checkmark icons, per-block `Copied` feedback for 1.8 seconds and short `Retry` failure feedback were added to the native window and explicit browser-overlay mode. Native clipboard contention retries asynchronously without blocking the hover/protection timer. Code is copied without Markdown fences, preserving indentation, quotes, tabs and line breaks; request replacement/hiding stops pending retries. No provider or capture-exclusion implementation changed.
+
+Executed checks:
+
+- Ruff and **9 Python tests** passed; .NET Release build had zero warnings/errors. Final .NET suite including interactive native tests: **33 passed**. The new Copy regression used OS hit testing at control padding and real mouse clicks; both code blocks copied exactly. It verified per-block success state/reset, unchanged foreground HWND and affinity 0x11, deliberately locked the clipboard, verified failure left its prior synthetic contents intact, then verified successful retry. The original clipboard object and pointer were restored afterward. The test executable now establishes per-monitor DPI awareness for consistent physical mouse/capture coordinates across its threads.
+- Extension ESLint, TypeScript checking, production build and **27 tests** passed. New failure assertions ensure an unsuccessful copy never shows a success checkmark; untrusted clicks still do nothing.
+- Actual disposable **Edge upgrade integration** passed. A click on the generated code control wrote the expected code (including Windows clipboard CRLF), displayed the SVG checkmark and `Copied` accessible label, reset to `Copy`, and retained the page's focus. Existing browser hover/expiry, controlled image-provider paths, DOM fullscreen and both providers' native private completion checks also passed. Upstreams were synthetic fixtures; physical F11, real image-command capture permission, Chrome integration and Meet recipient video were not tested in this copy-fix run.
+- Production publish and quiet installer passed. Installed helper DLL matched the published DLL. Saved settings remained byte-for-byte unchanged; private mode stayed enabled. Updated extension files were built in `BrowserExtension/dist` and copied into the existing release folder. Browser reload/page refresh remains the user's final activation step.
+
+As above, build/publish used an ignored clean validation copy, preserving and excluding the three unrelated unfinished provider/test working-tree edits. No credentials were printed or added to source; the tracked-file credential pattern scan passed.
+
 ## Follow-up: capture-excluded answers enabled and hardened, 8 October 2026
 
 This supersedes the optional/default-browser behavior recorded below. New settings and old settings without an explicit privacy choice now default to private Windows responses. An explicit existing opt-out is retained. The installed user profile was explicitly updated through Native Messaging to enable private responses; all other saved provider, appearance and privacy preferences were preserved (apart from the existing preferences-version migration).

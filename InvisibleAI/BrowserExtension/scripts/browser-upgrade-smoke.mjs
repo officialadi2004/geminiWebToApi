@@ -19,7 +19,11 @@ export async function run({page,worker,session,extensionContexts,connect,prepare
  tree=(await inspect()).tree;const button=find(tree,n=>n.nodeName==="BUTTON");assert.ok(button);
  const box=await session.send("DOM.getBoxModel",{backendNodeId:button.backendNodeId}), quad=box.model.border;
  await page.mouse.click((quad[0]+quad[4])/2,(quad[1]+quad[5])/2);await page.waitForTimeout(200);
- assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'s = input("Enter string: ")\r\nprint(s[::-1])');assert.equal(await page.evaluate(()=>document.activeElement.id),"question");results.push("Generated code renders, Copy preserves code/indentation with Windows CRLF, without fences or page focus loss");
+ assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),'s = input("Enter string: ")\r\nprint(s[::-1])');assert.equal(await page.evaluate(()=>document.activeElement.id),"question");
+ const copyNode=(await session.send("DOM.resolveNode",{backendNodeId:button.backendNodeId})).object;
+ async function copyState(){return (await session.send("Runtime.callFunctionOn",{objectId:copyNode.objectId,functionDeclaration:"function(){return {label:this.textContent,aria:this.getAttribute('aria-label'),path:this.querySelector('svg path')?.getAttribute('d')};}",returnByValue:true})).result.value;}
+ const copied=await copyState();assert.equal(copied.label,"Copied");assert.equal(copied.aria,"Code copied");assert.equal(copied.path,"M2 8l4 4L14 3");
+ await page.waitForTimeout(1900);assert.equal((await copyState()).label,"Copy");results.push("Generated code Copy preserves exact code, shows copy/checkmark icons and Copied confirmation, then resets without page focus loss");
  await hide();
  await worker.evaluate(()=>new Promise(r=>chrome.windows.getCurrent(w=>chrome.windows.update(w.id,{state:"fullscreen"},r))));
  await connect("Groq",{seconds:2,model:"account-vision-model"});

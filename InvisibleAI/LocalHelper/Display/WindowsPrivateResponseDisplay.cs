@@ -75,6 +75,9 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
         private string? request;
         private string summary = "", body = "";
         private string[] codes = [];
+        private double[] copiedUntil = [];
+        private int failedCopy = -1;
+        private bool copying;
         private readonly List<Rectangle> copyBounds = [];
         private Rectangle viewport;
         private IntPtr browser;
@@ -158,6 +161,7 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             choice = Regex.IsMatch(summary, @"\A(?:[A-Z]|[1-9][0-9]?)(?:, (?:[A-Z]|[1-9][0-9]?))*\z", RegexOptions.CultureInvariant);
             codes = Regex.Matches(body, @"```[^\r\n`]*\r?\n([\s\S]*?)```", RegexOptions.CultureInvariant)
                 .Select(fence => Regex.Replace(fence.Groups[1].Value, @"\r?\n$", "", RegexOptions.CultureInvariant)).ToArray();
+            copiedUntil = new double[codes.Length]; failedCopy = -1;
             processing = false; remaining = duration; last = Seconds(); scroll = 0;
             Position(); Invalidate();
         }
@@ -165,7 +169,7 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
         {
             if (id is not null && request != id) return;
             timer.Stop(); Hide(); request = null; summary = body = ""; codes = []; expanded = false;
-            copyBounds.Clear(); scroll = 0; ClickThrough(true);
+            copyBounds.Clear(); copiedUntil = []; failedCopy = -1; scroll = 0; ClickThrough(true);
         }
         private void ClickThrough(bool value)
         {
@@ -220,7 +224,8 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
                 using var graphics = CreateGraphics();
                 var measured = graphics.MeasureString(body, font, Math.Max(1, Math.Min(width, viewport.Width - inset * 2)));
                 width = Math.Min(width, (int)Math.Ceiling(measured.Width) + (int)(8 * scale));
-                int columns = Math.Max(1, width / (int)(62 * scale));
+                if (codes.Length != 0) width = Math.Max(width, (int)(88 * scale));
+                int columns = Math.Max(1, width / (int)(88 * scale));
                 int copyHeight = ((codes.Length + columns - 1) / columns) * (int)(22 * scale);
                 height = Math.Min((int)(420 * scale), (int)Math.Ceiling(measured.Height) + (int)(8 * scale) + copyHeight);
             }
@@ -248,23 +253,50 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             copyBounds.Clear();
             if (expanded && codes.Length != 0)
             {
-                using var background = new SolidBrush(BackColor);
+                // Color-key pixels pass mouse clicks through even without WS_EX_TRANSPARENT.
+                // Back only these tiny controls, leaving the surrounding answer transparent.
+                using var background = new SolidBrush(Color.FromArgb(239, 241, 244));
+                using var icon = new Pen(ink.Color, Math.Max(1, scale));
                 for (int i = 0; i < codes.Length; i++)
                 {
-                    int columns = Math.Max(1, ClientSize.Width / (int)(62 * scale));
-                    var bounds = new Rectangle((i % columns) * (int)(62 * scale), ClientSize.Height - ((i / columns) + 1) * (int)(22 * scale), (int)(62 * scale), (int)(22 * scale));
+                    int columns = Math.Max(1, ClientSize.Width / (int)(88 * scale));
+                    var bounds = new Rectangle((i % columns) * (int)(88 * scale), ClientSize.Height - ((i / columns) + 1) * (int)(22 * scale), Math.Min(ClientSize.Width, (int)(88 * scale)), (int)(22 * scale));
                     copyBounds.Add(bounds); e.Graphics.FillRectangle(background, bounds);
-                    e.Graphics.DrawString(codes.Length == 1 ? "Copy" : "Copy " + (i + 1), font, ink, bounds);
+                    bool copied = copiedUntil[i] > Seconds();
+                    float x = bounds.X + 4 * scale, y = bounds.Y + 5 * scale;
+                    if (copied) e.Graphics.DrawLines(icon, [new PointF(x, y + 5 * scale), new PointF(x + 3 * scale, y + 8 * scale), new PointF(x + 10 * scale, y + scale)]);
+                    else { e.Graphics.DrawRectangle(icon, x, y, 7 * scale, 9 * scale); e.Graphics.DrawRectangle(icon, x + 3 * scale, y + 3 * scale, 7 * scale, 9 * scale); }
+                    string label = failedCopy == i ? "Retry" : copied ? "Copied" : "Copy";
+                    if (codes.Length > 1) label += " " + (i + 1);
+                    using var labelFont = new Font("Segoe UI", 10 * scale, FontStyle.Regular, GraphicsUnit.Pixel);
+                    e.Graphics.DrawString(label, labelFont, ink, new RectangleF(bounds.X + 19 * scale, bounds.Y + 4 * scale, bounds.Width - 19 * scale, bounds.Height));
                 }
             }
         }
         protected override void OnMouseWheel(MouseEventArgs e) { if (expanded) { scroll = Math.Clamp(scroll - Math.Sign(e.Delta) * (int)(36 * scale), 0, 16000); Invalidate(); } }
-        protected override void OnMouseClick(MouseEventArgs e)
+        protected override async void OnMouseClick(MouseEventArgs e)
         {
-            if (e.Button != MouseButtons.Left || !expanded) return;
+            if (e.Button != MouseButtons.Left || !expanded || copying) return;
             int index = copyBounds.FindIndex(bounds => bounds.Contains(e.Location));
-            if (index >= 0 && index < codes.Length)
-                try { System.Windows.Forms.Clipboard.SetText(codes[index], TextDataFormat.UnicodeText); } catch (ExternalException) { /* Clipboard locked; leave the original intact. */ }
+            if (index < 0 || index >= codes.Length) return;
+            string? owner = request;
+            var data = new DataObject(); data.SetData(DataFormats.UnicodeText, codes[index]);
+            copying = true; copiedUntil[index] = 0; failedCopy = -1; Invalidate();
+            try
+            {
+                for (int attempt = 0; attempt < 5 && request == owner && !IsDisposed; attempt++)
+                {
+                    try
+                    {
+                        // No blocking clipboard retry loop: keep hover/display protection responsive.
+                        System.Windows.Forms.Clipboard.SetDataObject(data, true, 0, 0);
+                        copiedUntil[index] = Seconds() + 1.8; failedCopy = -1; Invalidate(); return;
+                    }
+                    catch (ExternalException) { if (attempt < 4) await Task.Delay(40); }
+                }
+                if (request == owner && !IsDisposed) { failedCopy = index; Invalidate(); }
+            }
+            finally { copying = false; }
         }
         protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); summary = body = ""; codes = []; } base.Dispose(disposing); }
     }

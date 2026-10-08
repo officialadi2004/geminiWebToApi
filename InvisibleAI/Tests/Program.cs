@@ -13,6 +13,8 @@ internal static class Program
 {
     public static async Task<int> Main(string[] args)
     {
+        // Native input/capture fixtures use physical screen coordinates on every test thread.
+        System.Windows.Forms.Application.SetHighDpiMode(System.Windows.Forms.HighDpiMode.PerMonitorV2);
         if (args.Contains("--screen-share-fixture")) return await NativeCaptureFixture.RunAsync();
         if (args.Contains("--native-fixture") || args.Contains(ExtensionIdentity.Origin)) {
             if (!args.Contains(ExtensionIdentity.Origin)) return 1;

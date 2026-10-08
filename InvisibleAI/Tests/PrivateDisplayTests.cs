@@ -25,7 +25,8 @@ internal static class PrivateDisplayTests
         ("Windows private HWND: exclusion, no activation, stale IDs, hide and disposal", NativeWindow),
         ("Windows capture: excluded HWND absent from GDI crop; positive control visible", Capture),
         ("Windows private hover: compact MCQ, paused expiry, resumed remaining time", Hover),
-        ("Windows private lifecycle: hidden HWND creation/recreation and exclusion loss", Lifecycle)
+        ("Windows private lifecycle: hidden HWND creation/recreation and exclusion loss", Lifecycle),
+        ("Windows private Copy: real icon hit area, exact code, feedback and clipboard contention", CopyCode)
     ];
     private static void Check(bool ok, string message) { if (!ok) throw new Exception(message); }
     private static Task Defaults()
@@ -249,11 +250,100 @@ internal static class PrivateDisplayTests
             await display.AnswerAsync("hover", new("C", []), default);
             await display.InspectAsync((_, bounds, _) => System.Windows.Forms.Cursor.Position = new Point(bounds.Right - 2, bounds.Bottom - 2));
             await Task.Delay(2400);
-            await display.InspectAsync((_, bounds, visible) => { Check(visible, "Hover failed to pause expiry."); Check(bounds.Width < 50 && bounds.Height < 50, "Hover expanded a single choice into a large panel."); });
+            await display.InspectAsync((_, bounds, visible) => { Check(visible, "Hover failed to pause expiry; cursor=" + System.Windows.Forms.Cursor.Position + "; bounds=" + bounds); Check(bounds.Width < 50 && bounds.Height < 50, "Hover expanded a single choice into a large panel."); });
             await display.InspectAsync((_, bounds, _) => System.Windows.Forms.Cursor.Position = new Point(bounds.Left - 20, bounds.Top - 20));
             await Task.Delay(2300);
             await display.InspectAsync((_, _, visible) => Check(!visible, "Leaving did not resume expiry."));
         }
         finally { System.Windows.Forms.Cursor.Position = pointer; }
     }
+
+    private static async Task CopyCode()
+    {
+        var pointer = System.Windows.Forms.Cursor.Position;
+        var foreground = WindowsPrivateResponseDisplay.Native.GetForegroundWindow();
+        using var display = new WindowsPrivateResponseDisplay();
+        System.Windows.Forms.IDataObject? original = null;
+        string first = "if (x) {\n\tprintf(\"hello\");\n}", second = "print('second block')";
+        string codeAnswer = "```c\n" + first + "\n```\n```python\n" + second + "\n```";
+        bool saved = false;
+        try
+        {
+            await display.BeginAsync("copy", new() { ResponseSeconds = 30 }, default);
+            await display.AnswerAsync("copy", new(codeAnswer, []), default);
+            await display.InspectAsync((window, bounds, _) =>
+            {
+                original = System.Windows.Forms.Clipboard.GetDataObject(); saved = true;
+                System.Windows.Forms.Cursor.Position = new Point(bounds.Right - 2, bounds.Bottom - 2);
+            });
+            await Task.Delay(150);
+            Point click = default;
+            async Task Target(int index)
+            {
+                await display.InspectAsync((window, _, _) =>
+                {
+                    var control = System.Windows.Forms.Control.FromHandle(window)!;
+                    // Establish hover in the same UI turn as layout: external pointer movement
+                    // between test awaits must not turn this Copy regression into a hover test.
+                    System.Windows.Forms.Cursor.Position = new Point(control.Bounds.Right - 2, control.Bounds.Bottom - 2);
+                    control.GetType().GetMethod("Tick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(control, [null, EventArgs.Empty]);
+                    control.Refresh();
+                    var buttons = (List<Rectangle>)control.GetType().GetField("copyBounds", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control)!;
+                    Check(buttons.Count == 2, "Both fenced code controls were not rendered; cursor=" + System.Windows.Forms.Cursor.Position + "; bounds=" + control.Bounds + "; visible=" + control.Visible + "; expanded=" + control.GetType().GetField("expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control));
+                    // Padding formerly painted with the transparency key: test a real clickable pixel.
+                    click = control.PointToScreen(new Point(buttons[index].Right - 3, buttons[index].Top + 3));
+                    System.Windows.Forms.Cursor.Position = click;
+                    Check(WindowFromPoint(new() { X = click.X, Y = click.Y }) == window, "Copy padding lets clicks reach the underlying app.");
+                });
+                Check(WindowFromPoint(new() { X = System.Windows.Forms.Cursor.Position.X, Y = System.Windows.Forms.Cursor.Position.Y }) == WindowFromPoint(new() { X = click.X, Y = click.Y }), "Pointer moved away from the owned copy fixture.");
+                mouse_event(2, 0, 0, 0, UIntPtr.Zero); mouse_event(4, 0, 0, 0, UIntPtr.Zero);
+                await Task.Delay(120);
+            }
+            await Target(0);
+            await display.InspectAsync((window, _, _) =>
+            {
+                Check(System.Windows.Forms.Clipboard.GetText() == first, "First code did not copy exactly.");
+                var control = System.Windows.Forms.Control.FromHandle(window)!;
+                var feedback = (double[])control.GetType().GetField("copiedUntil", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control)!;
+                Check(feedback[0] > 0 && feedback[1] == 0, "Success feedback does not belong to the copied block.");
+                Check(WindowsPrivateResponseDisplay.Native.GetForegroundWindow() == foreground, "Copy stole browser focus.");
+                Check(WindowsPrivateResponseDisplay.Native.GetWindowDisplayAffinity(window, out uint affinity) && affinity == 17, "Copy lost capture protection.");
+            });
+            await Target(1);
+            await display.InspectAsync((_, _, _) => Check(System.Windows.Forms.Clipboard.GetText() == second, "Second block copied the wrong content."));
+            await Task.Delay(1900);
+            await display.InspectAsync((window, _, _) =>
+            {
+                var feedback = (double[])System.Windows.Forms.Control.FromHandle(window)!.GetType().GetField("copiedUntil", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(System.Windows.Forms.Control.FromHandle(window))!;
+                double now = (double)System.Diagnostics.Stopwatch.GetTimestamp() / System.Diagnostics.Stopwatch.Frequency;
+                Check(System.Linq.Enumerable.All(feedback, until => until < now), "Copied checkmark never reset.");
+            });
+            // Own/release the clipboard on one dedicated thread while the STA retries.
+            using var acquired = new ManualResetEventSlim(); using var release = new ManualResetEventSlim();
+            bool opened = false;
+            var locker = new Thread(() => { opened = OpenClipboard(IntPtr.Zero); acquired.Set(); try { release.Wait(); } finally { if (opened) CloseClipboard(); } }) { IsBackground = true };
+            locker.Start(); Check(acquired.Wait(1000), "Contention fixture did not start.");
+            try { await Target(0); await Task.Delay(180); }
+            finally { release.Set(); locker.Join(1000); }
+            Check(opened, "Could not acquire contention fixture.");
+            await display.InspectAsync((window, _, _) =>
+            {
+                var control = System.Windows.Forms.Control.FromHandle(window)!;
+                Check((int)control.GetType().GetField("failedCopy", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control)! == 0, "Busy clipboard failure was silently ignored.");
+                Check(System.Windows.Forms.Clipboard.GetText() == second, "Failed copy changed the clipboard.");
+            });
+            await Target(0);
+            await display.InspectAsync((_, _, _) => Check(System.Windows.Forms.Clipboard.GetText() == first, "Retry did not recover."));
+            await display.HideAsync();
+        }
+        finally
+        {
+            await display.InspectAsync((_, _, _) => { if (saved) { if (original is null) System.Windows.Forms.Clipboard.Clear(); else System.Windows.Forms.Clipboard.SetDataObject(original, true, 5, 50); } });
+            System.Windows.Forms.Cursor.Position = pointer;
+        }
+    }
+    [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(WindowsPrivateResponseDisplay.Native.Point point);
+    [DllImport("user32.dll")] private static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool OpenClipboard(IntPtr owner);
+    [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] private static extern bool CloseClipboard();
 }

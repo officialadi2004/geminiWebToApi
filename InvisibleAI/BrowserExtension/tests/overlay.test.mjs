@@ -8,7 +8,7 @@ class Element {
  append(...nodes){for(const n of nodes){n.remove?.();n.parent=this;this.children.push(n);}}
  remove(){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this);this.parent=undefined;}
  replaceChildren(...nodes){this.children.forEach(n=>n.parent=undefined);this.children=[];this.append(...nodes);}
- setAttribute(){}
+ setAttribute(name,value){(this.attributes??={})[name]=value;}
  attachShadow(){this.shadow=new Element("shadow");this.shadow.parent=this;return this.shadow;}
  get isConnected(){return this.tag==="root"||this.parent?.isConnected===true;}
  addEventListener(name,fn){(this.listeners[name]??=[]).push(fn);}
@@ -18,10 +18,10 @@ class Element {
  matches(selector){return selector===":hover"&&this.hovered===true;}
  dispatch(name,extra={}){if(name==="mouseenter")this.hovered=true;if(name==="mouseleave")this.hovered=false;for(const fn of this.listeners[name]??[])fn({preventDefault(){},stopPropagation(){},stopImmediatePropagation(){},...extra});}
 }
-async function fixture(){
+async function fixture(copyOk=true){
  let listener,now=0;const root=new Element("root"),document=new Element("document"),window=new Element("window"),timers=[],messages=[];
- window.top=window;document.documentElement=root;document.createElement=tag=>new Element(tag);document.activeElement={id:"question"};
- const chrome={runtime:{id:"own",onMessage:{addListener(fn){listener=fn;}},async sendMessage(m){messages.push(m);return {ok:true};}}};
+ window.top=window;document.documentElement=root;document.createElement=tag=>new Element(tag);document.createElementNS=(_,tag)=>new Element(tag);document.activeElement={id:"question"};
+ const chrome={runtime:{id:"own",onMessage:{addListener(fn){listener=fn;}},async sendMessage(m){messages.push(m);return {ok:copyOk};}}};
  vm.runInNewContext(await readFile(new URL("../dist/src/content/overlay.js",import.meta.url),"utf8"),{document,window,chrome,performance:{now:()=>now},innerWidth:1000,innerHeight:800,scrollX:0,scrollY:0,requestAnimationFrame:fn=>fn(),setTimeout:(fn,ms)=>{const t={fn,ms,at:now+ms};timers.push(t);return t;},clearTimeout:t=>{if(t)t.cancelled=true;}});
  function advance(ms){const end=now+ms;for(;;){const next=timers.filter(t=>!t.cancelled&&t.at<=end).sort((a,b)=>a.at-b.at)[0];if(!next)break;now=next.at;next.cancelled=true;next.fn();}now=end;}
  return {root,document,window,timers,messages,advance,send:m=>listener({target:"overlay",...m},{id:"own"},m.reply??(()=>{})),card:()=>root.children[0]?.shadow?.children.find(n=>n.tag==="div")};
@@ -38,8 +38,15 @@ test("Details expand on hover only, collapse on leave, and code copy sends exact
  f.send({state:"answer",id:"one",text:"C",details:"Because Paris.",opacity:.94});let card=f.card();assert.equal(card.style["--answer-opacity"],"0.94");assert.ok(card.className.includes("expandable"));assert.ok(!card.className.includes("expanded"));card.dispatch("mouseenter");assert.ok(card.className.includes("expanded"));card.dispatch("mouseleave");assert.ok(!card.className.includes("expanded"));
  f.send({state:"processing",id:"two"});const code='if (x) {\n\tprintf("hello");\n}';
  f.send({state:"answer",id:"two",text:'```c\n'+code+'\n```'});card=f.card();assert.equal(card.children[0].textContent,"Code");
- const body=card.children[1],box=body.children[0],button=box.children[0].children[1];button.dispatch("click",{isTrusted:true});await Promise.resolve();assert.equal(f.messages[0].action,"copy-code");assert.equal(f.messages[0].text,code);assert.equal(button.textContent,"Copied ✓");
- f.timers.at(-1).fn();assert.equal(button.textContent,"Copy");assert.equal(f.document.activeElement.id,"question");
+ const body=card.children[1],box=body.children[0],button=box.children[0].children[1];assert.equal(button.children[0].tag,"svg");button.dispatch("click",{isTrusted:true});await Promise.resolve();assert.equal(f.messages[0].action,"copy-code");assert.equal(f.messages[0].text,code);assert.equal(button.children[1].textContent,"Copied");assert.equal(button.attributes["aria-label"],"Code copied");assert.equal(button.children[0].children[0].attributes.d,"M2 8l4 4L14 3");
+ f.timers.at(-1).fn();assert.equal(button.children[1].textContent,"Copy");assert.equal(f.document.activeElement.id,"question");
+});
+
+test("Failed code copy shows retry instead of a success icon; untrusted clicks do nothing",async()=>{
+ const f=await fixture(false);f.send({state:"processing",id:"copy"});f.send({state:"answer",id:"copy",text:'```js\nconsole.log("test");\n```'});
+ const button=f.card().children[1].children[0].children[0].children[1];button.dispatch("click");assert.equal(f.messages.length,0);
+ button.dispatch("click",{isTrusted:true});await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(button.children[1].textContent,"Retry");assert.equal(button.attributes["aria-label"],"Copy failed. Try again.");assert.notEqual(button.children[0].children[0].attributes.d,"M2 8l4 4L14 3");
 });
 test("Compact previews are one short line while hover retains the complete answer",async()=>{
  const f=await fixture();const text="Binary search repeatedly halves a sorted search range until it finds the requested value.";
