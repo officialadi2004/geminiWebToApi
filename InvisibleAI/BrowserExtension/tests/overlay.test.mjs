@@ -6,6 +6,7 @@ import { readFile } from "node:fs/promises";
 class Element {
  constructor(tag){this.tag=tag;this.children=[];this.listeners={};this.style={setProperty:(k,v)=>this.style[k]=v};this.className="";}
  append(...nodes){for(const n of nodes){n.remove?.();n.parent=this;this.children.push(n);}}
+ prepend(...nodes){for(const n of [...nodes].reverse()){n.remove?.();n.parent=this;this.children.unshift(n);}}
  remove(){if(this.parent)this.parent.children=this.parent.children.filter(n=>n!==this);this.parent=undefined;}
  replaceChildren(...nodes){this.children.forEach(n=>n.parent=undefined);this.children=[];this.append(...nodes);}
  setAttribute(name,value){(this.attributes??={})[name]=value;}
@@ -51,9 +52,21 @@ test("Failed code copy shows retry instead of a success icon; untrusted clicks d
 test("Compact previews are one short line while hover retains the complete answer",async()=>{
  const f=await fixture();const text="Binary search repeatedly halves a sorted search range until it finds the requested value.";
  f.send({state:"processing",id:"one"});f.send({state:"answer",id:"one",text});const card=f.card();
- assert.equal(card.children[0].textContent.length,40);assert.ok(card.children[0].textContent.endsWith("…"));assert.equal(card.children[1].children[0].textContent,text);
+ assert.equal(card.children[0].textContent.length,40);assert.ok(card.children[0].textContent.endsWith("…"));assert.equal(card.children[1].children[1].textContent,text);
  card.dispatch("mouseenter");assert.ok(card.className.includes("expanded"));card.dispatch("mouseleave");assert.ok(!card.className.includes("expanded"));
  f.send({state:"processing",id:"two"});f.send({state:"answer",id:"two",text:"A, C, D"});assert.equal(f.card().children[0].textContent,"A, C, D");
+});
+
+test("Descriptive answer copy retains full text/newlines and detailed explanations, with success/reset",async()=>{
+ const f=await fixture();
+ for(const [text,details] of [["A stack is last-in-first-out.",""],["Full answer: "+"long description ".repeat(20)+"\nSecond line: Ω.",""],["Polymorphism allows different implementations.","Objects respond through a shared interface."],["C","Paris is the capital.\nAdditional detail."]]){
+  f.send({state:"processing",id:text});f.send({state:"answer",id:text,text,details});const card=f.card();assert.ok(card.className.includes("expandable"));assert.ok(!card.className.includes("expanded"));card.dispatch("mouseenter");
+  const button=card.children[1].children[0].children[0];assert.equal(button.attributes["aria-label"],"Copy answer");button.dispatch("click",{isTrusted:true});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(f.messages.at(-1).action,"copy-answer");assert.equal(f.messages.at(-1).text,details?text+"\n"+details:text);assert.equal(button.children[1].textContent,"Copied");assert.equal(button.attributes["aria-label"],"Answer copied");
+  assert.equal(card.children[1].children[1].textContent,text==="C"?details:details?text+"\n"+details:text);
+  f.advance(1800);assert.equal(button.children[1].textContent,"Copy");card.dispatch("mouseleave");assert.equal(f.document.activeElement.id,"question");
+ }
+ f.send({state:"processing",id:"mcq"});f.send({state:"answer",id:"mcq",text:"B"});assert.equal(f.card().children.length,1);
 });
 test("Every answer pauses on hover and resumes only its remaining duration",async()=>{
  const f=await fixture();f.send({state:"processing",id:"one"});f.send({state:"answer",id:"one",text:"B"});

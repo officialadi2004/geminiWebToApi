@@ -136,7 +136,7 @@ chrome.commands.onCommand.addListener(command => {
 chrome.tabs.onRemoved.addListener(tabId => { const id = active.get(tabId); if (id) cancel(id); active.delete(tabId); recent.delete(tabId); });
 chrome.tabs.onUpdated.addListener((tabId, changes) => { if (changes.status === "loading") { const id = active.get(tabId); if (id) cancel(id); active.delete(tabId); } });
 chrome.runtime.onMessage.addListener((request: unknown, sender, reply) => {
-  if (sender.id === chrome.runtime.id && sender.frameId === 0 && sender.tab?.id && /^https?:\/\//.test(sender.url ?? "") && (request as { action?: string })?.action === "copy-code") {
+  if (sender.id === chrome.runtime.id && sender.frameId === 0 && sender.tab?.id && /^https?:\/\//.test(sender.url ?? "") && ["copy-code", "copy-answer"].includes(String((request as { action?: string })?.action))) {
     const text = (request as { text?: unknown }).text;
     if (typeof text !== "string" || text.length > 12000) { reply({ ok: false }); return false; }
     void clipboardDocument().then(() => chrome.runtime.sendMessage({ target: "clipboard", action: "write", text })).then(reply).catch(() => reply({ ok: false }));

@@ -75,6 +75,7 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
         private string? request;
         private string summary = "", body = "";
         private string[] codes = [];
+        private string[] copyTexts = [];
         private double[] copiedUntil = [];
         private int failedCopy = -1;
         private bool copying;
@@ -161,14 +162,15 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             choice = Regex.IsMatch(summary, @"\A(?:[A-Z]|[1-9][0-9]?)(?:, (?:[A-Z]|[1-9][0-9]?))*\z", RegexOptions.CultureInvariant);
             codes = Regex.Matches(body, @"```[^\r\n`]*\r?\n([\s\S]*?)```", RegexOptions.CultureInvariant)
                 .Select(fence => Regex.Replace(fence.Groups[1].Value, @"\r?\n$", "", RegexOptions.CultureInvariant)).ToArray();
-            copiedUntil = new double[codes.Length]; failedCopy = -1;
+            copyTexts = codes.Length != 0 ? codes : !choice || body != summary ? [body] : [];
+            copiedUntil = new double[copyTexts.Length]; failedCopy = -1;
             processing = false; remaining = duration; last = Seconds(); scroll = 0;
             Position(); Invalidate();
         }
         public void HideAnswer(string? id)
         {
             if (id is not null && request != id) return;
-            timer.Stop(); Hide(); request = null; summary = body = ""; codes = []; expanded = false;
+            timer.Stop(); Hide(); request = null; summary = body = ""; codes = []; copyTexts = []; expanded = false;
             copyBounds.Clear(); copiedUntil = []; failedCopy = -1; scroll = 0; ClickThrough(true);
         }
         private void ClickThrough(bool value)
@@ -224,9 +226,9 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
                 using var graphics = CreateGraphics();
                 var measured = graphics.MeasureString(body, font, Math.Max(1, Math.Min(width, viewport.Width - inset * 2)));
                 width = Math.Min(width, (int)Math.Ceiling(measured.Width) + (int)(8 * scale));
-                if (codes.Length != 0) width = Math.Max(width, (int)(88 * scale));
+                if (copyTexts.Length != 0) width = Math.Max(width, (int)(88 * scale));
                 int columns = Math.Max(1, width / (int)(88 * scale));
-                int copyHeight = ((codes.Length + columns - 1) / columns) * (int)(22 * scale);
+                int copyHeight = ((copyTexts.Length + columns - 1) / columns) * (int)(22 * scale);
                 height = Math.Min((int)(420 * scale), (int)Math.Ceiling(measured.Height) + (int)(8 * scale) + copyHeight);
             }
             width = Math.Clamp(width, 1, Math.Max(1, viewport.Width - inset * 2));
@@ -251,13 +253,13 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             e.Graphics.DrawString(expanded ? body : Preview(), font, ink,
                 new RectangleF(0, expanded ? -scroll : 0, ClientSize.Width, expanded ? 20000 : ClientSize.Height));
             copyBounds.Clear();
-            if (expanded && codes.Length != 0)
+            if (expanded && copyTexts.Length != 0)
             {
                 // Color-key pixels pass mouse clicks through even without WS_EX_TRANSPARENT.
                 // Back only these tiny controls, leaving the surrounding answer transparent.
                 using var background = new SolidBrush(Color.FromArgb(239, 241, 244));
                 using var icon = new Pen(ink.Color, Math.Max(1, scale));
-                for (int i = 0; i < codes.Length; i++)
+                for (int i = 0; i < copyTexts.Length; i++)
                 {
                     int columns = Math.Max(1, ClientSize.Width / (int)(88 * scale));
                     var bounds = new Rectangle((i % columns) * (int)(88 * scale), ClientSize.Height - ((i / columns) + 1) * (int)(22 * scale), Math.Min(ClientSize.Width, (int)(88 * scale)), (int)(22 * scale));
@@ -274,13 +276,14 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             }
         }
         protected override void OnMouseWheel(MouseEventArgs e) { if (expanded) { scroll = Math.Clamp(scroll - Math.Sign(e.Delta) * (int)(36 * scale), 0, 16000); Invalidate(); } }
+        protected override void OnMouseDoubleClick(MouseEventArgs e) => OnMouseClick(e);
         protected override async void OnMouseClick(MouseEventArgs e)
         {
             if (e.Button != MouseButtons.Left || !expanded || copying) return;
             int index = copyBounds.FindIndex(bounds => bounds.Contains(e.Location));
-            if (index < 0 || index >= codes.Length) return;
+            if (index < 0 || index >= copyTexts.Length) return;
             string? owner = request;
-            var data = new DataObject(); data.SetData(DataFormats.UnicodeText, codes[index]);
+            var data = new DataObject(); data.SetData(DataFormats.UnicodeText, copyTexts[index]);
             copying = true; copiedUntil[index] = 0; failedCopy = -1; Invalidate();
             try
             {
@@ -298,7 +301,7 @@ public sealed class WindowsPrivateResponseDisplay : IPrivateResponseDisplay
             }
             finally { copying = false; }
         }
-        protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); summary = body = ""; codes = []; } base.Dispose(disposing); }
+        protected override void Dispose(bool disposing) { if (disposing) { timer.Dispose(); summary = body = ""; codes = copyTexts = []; } base.Dispose(disposing); }
     }
     internal static class Native
     {

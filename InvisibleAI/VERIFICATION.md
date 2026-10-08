@@ -1,5 +1,19 @@
 # Verification record — browser-first update, 7 October 2026
 
+## Follow-up: Copy for descriptive answers, 8 October 2026
+
+Descriptive responses now reveal a Copy icon on hover in both private native mode and browser-overlay mode. It copies the full answer rather than the collapsed preview, retaining line breaks, Unicode and any detailed explanation. The shared copy control shows a checkmark/`Copied` for 1.8 seconds and supports retry feedback. Code-block copying remains separate; plain MCQ labels retain their tiny presentation. Browser prose expansion hides its duplicate preview while showing the complete body. Native double-clicks route through the same copy handler so quick retry clicks are not swallowed.
+
+Executed checks:
+
+- Ruff and **9 Python tests** passed; .NET Release build completed with zero warnings/errors. **34 .NET tests**, including the interactive private-window suite, passed. The native Copy test now uses real mouse clicks to verify short descriptions, text longer than the compact preview, Unicode/newlines/tabs and a detailed MCQ's label/explanation; exact clipboard text, success feedback, unchanged foreground HWND and affinity 0x11 were verified. Existing code-copy/contention/retry/reset and hover/capture tests also passed. The test restored its prior clipboard and pointer.
+- Extension ESLint, TypeScript checks, production extension build and **29 tests** passed. Tests cover short/long descriptions, normal-answer details, MCQ explanations, full-text copy/checkmark/reset, no network/clipboard-read on copying, top-frame sender validation and the 12,000-character clipboard-write bound. Existing code-copy and hover-timer tests passed.
+- Actual disposable **Edge upgrade integration** passed on the final source: descriptive hover Copy wrote the complete binary-search answer beyond its short preview, displayed `Copied`/`Answer copied`, and retained the page's focus. Existing code copy/checkmark/reset, hover expiry, controlled image-provider paths, DOM fullscreen and private native completions for both fixture providers passed. Upstreams were synthetic; Chrome integration, physical F11, real screenshot-command capture permission and Meet recipient video were not tested in this feature run.
+
+Production publish and quiet installer passed. The installed helper DLL matched the published DLL; saved settings stayed byte-for-byte unchanged. The existing release extension folder and workspace `BrowserExtension/dist` contain the updated files. Reload the extension and refresh the question page to activate them.
+
+Build/validation uses a clean ignored snapshot excluding the same three unrelated unfinished provider/test edits; existing provider implementations and user credentials were preserved. The tracked-file credential pattern scan passed.
+
 ## Follow-up: complete runnable programming answers, 8 October 2026
 
 The shared Gemini/Groq instructions now explicitly request a complete program: imports/includes, input or example data, an entry point where required, executed helper/solution calls and printed/displayed results. A function definition with a return but no invocation/output is insufficient. Quick/Detailed modes keep the complete code; judge-style stdin/stdout formats exclude extra prompts. Explicit function-only/signature requests remain supported. MCQ behavior, credentials, overlay/copy, privacy and provider routing were not changed.

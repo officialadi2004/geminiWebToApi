@@ -25,6 +25,15 @@ export async function run({page,worker,session,extensionContexts,connect,prepare
  const copied=await copyState();assert.equal(copied.label,"Copied");assert.equal(copied.aria,"Code copied");assert.equal(copied.path,"M2 8l4 4L14 3");
  await page.waitForTimeout(1900);assert.equal((await copyState()).label,"Copy");results.push("Generated code Copy preserves exact code, shows copy/checkmark icons and Copied confirmation, then resets without page focus loss");
  await hide();
+ await connect("Groq",{seconds:10});await prepare("Explain binary search in one sentence.");await page.keyboard.press("Control+Shift+v");await until(v=>v.text.startsWith("Binary search"));await hover();
+ tree=(await inspect()).tree;const answerCopy=find(tree,n=>n.nodeName==="BUTTON");assert.ok(answerCopy);
+ const answerBox=await session.send("DOM.getBoxModel",{backendNodeId:answerCopy.backendNodeId}),answerQuad=answerBox.model.border;
+ await page.mouse.click((answerQuad[0]+answerQuad[4])/2,(answerQuad[1]+answerQuad[5])/2);await page.waitForTimeout(200);
+ assert.equal(await page.evaluate(()=>navigator.clipboard.readText()),"Binary search repeatedly halves a sorted search range.");assert.equal(await page.evaluate(()=>document.activeElement.id),"question");
+ const answerObject=(await session.send("DOM.resolveNode",{backendNodeId:answerCopy.backendNodeId})).object;
+ const answerState=(await session.send("Runtime.callFunctionOn",{objectId:answerObject.objectId,functionDeclaration:"function(){return {label:this.textContent,aria:this.getAttribute('aria-label')};}",returnByValue:true})).result.value;
+ assert.equal(answerState.label,"Copied");assert.equal(answerState.aria,"Answer copied");results.push("Descriptive answer hover Copy writes the full answer beyond its short preview, shows Copied, and preserves page focus");
+ await hide();
  await worker.evaluate(()=>new Promise(r=>chrome.windows.getCurrent(w=>chrome.windows.update(w.id,{state:"fullscreen"},r))));
  await connect("Groq",{seconds:2,model:"account-vision-model"});
  console.log("Image shortcut binding: "+JSON.stringify(await worker.evaluate(()=>chrome.commands.getAll().then(c=>c.find(x=>x.name==="ask-region")))));

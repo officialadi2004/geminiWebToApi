@@ -36,12 +36,38 @@
     host.style.cssText = "all:initial!important;position:fixed!important;right:20px!important;bottom:20px!important;z-index:2147483647!important;pointer-events:none!important;max-width:calc(100vw - 40px)!important;";
     const shadow = host.attachShadow({ mode: "closed" });
     const style = document.createElement("style");
-    style.textContent = `:host{pointer-events:none}*{box-sizing:border-box} .card{font:12px/1.4 'Segoe UI',sans-serif;color:#727985;opacity:var(--answer-opacity,.55);background:none;border:0;border-radius:0;box-shadow:none;max-width:min(180px,calc(100vw - 40px));pointer-events:auto;cursor:default} .summary{font-size:10px;line-height:1.3;padding:1px 2px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden} .mcq .summary{text-align:center;min-width:12px} .body{display:none;white-space:pre-wrap;overflow-wrap:anywhere;padding:4px 2px;max-height:min(420px,calc(100vh - 60px));overflow:auto} .expanded{max-width:min(480px,calc(100vw - 40px))} .expanded .summary{font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere} .expanded.mcq .summary{font-size:14px} .expanded .body{display:block} .text{margin:0 0 6px} .code{position:relative;margin:6px 0;border:0;background:none} .code-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0;color:inherit;font-size:11px} pre{margin:0;padding:2px 0;overflow:auto;white-space:pre;font:12px/1.5 Consolas,monospace;color:inherit} button{font:11px 'Segoe UI',sans-serif;color:inherit;background:none;border:0;padding:2px 4px;cursor:pointer} .processing{padding:0;width:6px;height:6px;border:0;box-shadow:none;border-radius:50%;background:#2aa881;animation:pulse 1s ease-in-out infinite;pointer-events:none} @keyframes pulse{50%{opacity:.15}} @media(prefers-reduced-motion:reduce){.processing{animation:none}}`;
+    style.textContent = `:host{pointer-events:none}*{box-sizing:border-box} .card{font:12px/1.4 'Segoe UI',sans-serif;color:#727985;opacity:var(--answer-opacity,.55);background:none;border:0;border-radius:0;box-shadow:none;max-width:min(180px,calc(100vw - 40px));pointer-events:auto;cursor:default} .summary{font-size:10px;line-height:1.3;padding:1px 2px;white-space:nowrap;text-overflow:ellipsis;overflow:hidden} .mcq .summary{text-align:center;min-width:12px} .body{display:none;white-space:pre-wrap;overflow-wrap:anywhere;padding:4px 2px;max-height:min(420px,calc(100vh - 60px));overflow:auto} .expanded{max-width:min(480px,calc(100vw - 40px))} .expanded .summary{font-size:12px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere} .expanded.mcq .summary{font-size:14px} .expanded .body{display:block} .prose.expanded .summary{display:none} .answer-copy{display:flex;justify-content:flex-end} .text{margin:0 0 6px} .code{position:relative;margin:6px 0;border:0;background:none} .code-head{display:flex;align-items:center;justify-content:space-between;padding:2px 0;color:inherit;font-size:11px} pre{margin:0;padding:2px 0;overflow:auto;white-space:pre;font:12px/1.5 Consolas,monospace;color:inherit} button{font:11px 'Segoe UI',sans-serif;color:inherit;background:none;border:0;padding:2px 4px;cursor:pointer} .processing{padding:0;width:6px;height:6px;border:0;box-shadow:none;border-radius:50%;background:#2aa881;animation:pulse 1s ease-in-out infinite;pointer-events:none} @keyframes pulse{50%{opacity:.15}} @media(prefers-reduced-motion:reduce){.processing{animation:none}}`;
     card = document.createElement("div"); card.className = "card"; card.setAttribute("role", "status"); card.setAttribute("aria-live", "polite");
     const mountedCard = card;
     card.addEventListener("mouseenter", () => { if (card !== mountedCard || card.classList.contains("processing")) return; pauseExpiry(); if (card.classList.contains("expandable")) card.classList.add("expanded"); });
     card.addEventListener("mouseleave", () => { if (card !== mountedCard || card.classList.contains("processing")) return; card.classList.remove("expanded"); hovered = false; resumeExpiry(); });
     shadow.append(style, card); parent().append(host);
+  }
+  function copyButton(text: string, kind: "code" | "answer"): HTMLButtonElement {
+    const button = document.createElement("button"); button.type = "button"; button.tabIndex = -1;
+    const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    icon.setAttribute("viewBox", "0 0 16 16"); icon.setAttribute("width", "12"); icon.setAttribute("height", "12"); icon.setAttribute("aria-hidden", "true");
+    icon.style.cssText = "vertical-align:middle;margin-right:4px;fill:none;stroke:currentColor;stroke-width:1.3";
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); icon.append(path);
+    const label = document.createElement("span"); button.append(icon, label);
+    let resetCopy: ReturnType<typeof setTimeout> | undefined, copying = false;
+    function copyState(state: "copy" | "copied" | "failed"): void {
+      label.textContent = state === "copied" ? "Copied" : state === "failed" ? "Retry" : "Copy";
+      path.setAttribute("d", state === "copied" ? "M2 8l4 4L14 3" : "M5 5h8v9H5zM3 11H2V2h8v1");
+      button.setAttribute("aria-label", state === "copied" ? `${kind === "code" ? "Code" : "Answer"} copied` : state === "failed" ? "Copy failed. Try again." : `Copy ${kind}`);
+      button.title = state === "copied" ? "Copied to clipboard" : state === "failed" ? "Could not copy. Click to retry." : `Copy ${kind}`;
+    }
+    copyState("copy");
+    button.addEventListener("mousedown", e => e.preventDefault());
+    button.addEventListener("click", event => {
+      if (!event.isTrusted || copying) return;
+      copying = true; clearTimeout(resetCopy);
+      void chrome.runtime.sendMessage({ action: kind === "code" ? "copy-code" : "copy-answer", text }).then(result => {
+        if (!result?.ok) throw new Error("Copy failed");
+        copyState("copied"); resetCopy = setTimeout(() => { if (button.isConnected) copyState("copy"); }, 1800);
+      }).catch(() => { copyState("failed"); }).finally(() => { copying = false; });
+    });
+    return button;
   }
   function details(body: HTMLDivElement, text: string): boolean {
     const fences = /```([^\r\n`]*)\r?\n([\s\S]*?)```/g;
@@ -52,31 +78,9 @@
       const box = document.createElement("div"); box.className = "code";
       const head = document.createElement("div"); head.className = "code-head";
       const language = document.createElement("span"); language.textContent = match[1].trim() || "Code";
-      const button = document.createElement("button"); button.type = "button"; button.tabIndex = -1;
-      const icon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-      icon.setAttribute("viewBox", "0 0 16 16"); icon.setAttribute("width", "12"); icon.setAttribute("height", "12"); icon.setAttribute("aria-hidden", "true");
-      icon.style.cssText = "vertical-align:middle;margin-right:4px;fill:none;stroke:currentColor;stroke-width:1.3";
-      const path = document.createElementNS("http://www.w3.org/2000/svg", "path"); icon.append(path);
-      const label = document.createElement("span"); button.append(icon, label);
-      let resetCopy: ReturnType<typeof setTimeout> | undefined, copying = false;
-      function copyState(state: "copy" | "copied" | "failed"): void {
-        label.textContent = state === "copied" ? "Copied" : state === "failed" ? "Retry" : "Copy";
-        path.setAttribute("d", state === "copied" ? "M2 8l4 4L14 3" : "M5 5h8v9H5zM3 11H2V2h8v1");
-        button.setAttribute("aria-label", state === "copied" ? "Code copied" : state === "failed" ? "Copy failed. Try again." : "Copy code");
-        button.title = state === "copied" ? "Copied to clipboard" : state === "failed" ? "Could not copy. Click to retry." : "Copy code";
-      }
-      copyState("copy");
       // Exclude only the fence separator newline, preserving code indentation, quotes and tabs.
       const code = match[2].replace(/\r?\n$/, "");
-      button.addEventListener("mousedown", e => e.preventDefault());
-      button.addEventListener("click", event => {
-        if (!event.isTrusted || copying) return;
-        copying = true; clearTimeout(resetCopy);
-        void chrome.runtime.sendMessage({ action: "copy-code", text: code }).then(result => {
-          if (!result?.ok) throw new Error("Copy failed");
-          copyState("copied"); resetCopy = setTimeout(() => { if (button.isConnected) copyState("copy"); }, 1800);
-        }).catch(() => { copyState("failed"); }).finally(() => { copying = false; });
-      });
+      const button = copyButton(code, "code");
       const pre = document.createElement("pre"); const node = document.createElement("code"); node.textContent = code; pre.append(node); head.append(language, button); box.append(head, pre); body.append(box);
       last = match.index! + match[0].length;
     }
@@ -87,13 +91,19 @@
     card!.style.setProperty("--answer-opacity", String(Number.isFinite(opacity) ? Math.min(1, Math.max(.5, opacity)) : .55));
     const summary = document.createElement("div"); summary.className = "summary";
     const body = document.createElement("div"); body.className = "body";
-    const code = details(body, explanation || text);
     const mcq = /^[A-Z](?:, [A-Z])*$/.test(text);
+    const code = details(body, explanation ? mcq ? explanation : text + "\n" + explanation : text);
     const preview = text.replace(/\s+/g, " ").trim();
     summary.textContent = mcq ? text : code ? "Code" : preview.length > 40 ? preview.slice(0, 39) + "…" : preview;
     card!.append(summary);
     if (mcq) card!.classList.add("mcq");
-    if (explanation || code || preview !== text || preview.length > 40 || summary.scrollWidth > summary.clientWidth) {
+    const copyAnswer = !code && (!mcq || explanation.length > 0);
+    if (copyAnswer) {
+      const actions = document.createElement("div"); actions.className = "answer-copy";
+      actions.append(copyButton(explanation ? text + "\n" + explanation : text, "answer")); body.prepend(actions);
+      if (!mcq) card!.classList.add("prose");
+    }
+    if (copyAnswer || explanation || code || preview !== text || preview.length > 40 || summary.scrollWidth > summary.clientWidth) {
       card!.append(body); card!.classList.add("expandable");
     }
   }

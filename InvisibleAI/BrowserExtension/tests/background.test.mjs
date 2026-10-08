@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-const listeners={}, messages=[], displays=[];
+const listeners={}, messages=[], displays=[], writes=[];
 let reads=0, captures=0, clipboardText="France? A. Berlin B. Madrid C. Paris D. Rome", contexts=[], selectionCancelled=false, screenshotEnabled=true, clipboardEnabled=true, privateResponses=false, invalidPrivateAck=false, omitPrivatePreference=false;
 const png=Uint8Array.from(Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jhS8AAAAASUVORK5CYII=","base64"));
 let closed=0;
@@ -44,6 +44,17 @@ test("Navigation invalidates pending request correlation",async()=>{
 
 test("Disabled text privacy prevents even an explicit clipboard read",async()=>{
  const before=reads;clipboardEnabled=false;listeners.command("ask-clipboard");await settle();assert.equal(reads,before);assert.ok(displays.at(-1).text.includes("disabled"));clipboardEnabled=true;
+});
+test("Descriptive copy uses the existing offscreen writer only for valid top-frame requests",async()=>{
+ const original=globalThis.chrome.runtime.sendMessage;
+ globalThis.chrome.runtime.sendMessage=async request=>{if(request.target==="clipboard"&&request.action==="write")writes.push(request);return original(request);};
+ try{
+  const before=reads,count=messages.length,text="Complete answer with Ω and line breaks.\nSecond line.";
+  const result=await new Promise(resolve=>listeners.ui({action:"copy-answer",text},{id:"own",frameId:0,tab:{id:7},url:"https://example.com/question"},resolve));
+  assert.equal(result.ok,true);assert.equal(writes.at(-1).text,text);assert.equal(reads,before);assert.equal(messages.length,count);
+  for(const bad of [{id:"other",frameId:0},{id:"own",frameId:1}])assert.equal(listeners.ui({action:"copy-answer",text},{...bad,tab:{id:7},url:"https://example.com"},()=>assert.fail()),false);
+  const rejected=await new Promise(resolve=>listeners.ui({action:"copy-answer",text:"x".repeat(12001)},{id:"own",frameId:0,tab:{id:7},url:"https://example.com"},resolve));assert.equal(rejected.ok,false);
+ }finally{globalThis.chrome.runtime.sendMessage=original;}
 });
 
 test("Private text/image requests never put processing, answer, details or errors into the page",async()=>{

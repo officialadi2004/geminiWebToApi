@@ -278,7 +278,7 @@ internal static class PrivateDisplayTests
             });
             await Task.Delay(150);
             Point click = default;
-            async Task Target(int index)
+            async Task Target(int index, int expectedButtons = 2)
             {
                 await display.InspectAsync((window, _, _) =>
                 {
@@ -289,7 +289,7 @@ internal static class PrivateDisplayTests
                     control.GetType().GetMethod("Tick", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.Invoke(control, [null, EventArgs.Empty]);
                     control.Refresh();
                     var buttons = (List<Rectangle>)control.GetType().GetField("copyBounds", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control)!;
-                    Check(buttons.Count == 2, "Both fenced code controls were not rendered; cursor=" + System.Windows.Forms.Cursor.Position + "; bounds=" + control.Bounds + "; visible=" + control.Visible + "; expanded=" + control.GetType().GetField("expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control));
+                    Check(buttons.Count == expectedButtons, "Copy controls were not rendered; cursor=" + System.Windows.Forms.Cursor.Position + "; bounds=" + control.Bounds + "; visible=" + control.Visible + "; expanded=" + control.GetType().GetField("expanded", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control));
                     // Padding formerly painted with the transparency key: test a real clickable pixel.
                     click = control.PointToScreen(new Point(buttons[index].Right - 3, buttons[index].Top + 3));
                     System.Windows.Forms.Cursor.Position = click;
@@ -334,6 +334,20 @@ internal static class PrivateDisplayTests
             });
             await Target(0);
             await display.InspectAsync((_, _, _) => Check(System.Windows.Forms.Clipboard.GetText() == first, "Retry did not recover."));
+            foreach (var (text, details) in new[] { ("A stack is last-in-first-out.", ""), ("Full answer: " + new string('x', 300) + "\nSecond line: Ω.\tEnd.", ""), ("C", "Paris is the capital.\nAdditional detail.") })
+            {
+                await display.BeginAsync("prose-" + text.Length, new() { ResponseSeconds = 30 }, default);
+                await display.AnswerAsync("prose-" + text.Length, new(text, [], Details: details), default);
+                await Target(0, 1);
+                await display.InspectAsync((window, _, _) =>
+                {
+                    Check(System.Windows.Forms.Clipboard.GetText() == (details.Length > 0 ? text + "\n" + details : text), "Descriptive Copy lost full text, line breaks or details.");
+                    Check(WindowsPrivateResponseDisplay.Native.GetForegroundWindow() == foreground, "Descriptive Copy stole focus.");
+                    Check(WindowsPrivateResponseDisplay.Native.GetWindowDisplayAffinity(window, out uint affinity) && affinity == 17, "Descriptive Copy lost capture exclusion.");
+                    var control = System.Windows.Forms.Control.FromHandle(window)!;
+                    Check(((double[])control.GetType().GetField("copiedUntil", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!.GetValue(control)!)[0] > 0, "Descriptive Copy had no success feedback.");
+                });
+            }
             await display.HideAsync();
         }
         finally
