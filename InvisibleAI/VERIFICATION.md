@@ -1,5 +1,18 @@
 # Verification record — browser-first update, 7 October 2026
 
+## Follow-up: complete runnable programming answers, 8 October 2026
+
+The shared Gemini/Groq instructions now explicitly request a complete program: imports/includes, input or example data, an entry point where required, executed helper/solution calls and printed/displayed results. A function definition with a return but no invocation/output is insufficient. Quick/Detailed modes keep the complete code; judge-style stdin/stdout formats exclude extra prompts. Explicit function-only/signature requests remain supported. MCQ behavior, credentials, overlay/copy, privacy and provider routing were not changed.
+
+Executed checks:
+
+- Full standard `Build.ps1` passed: Ruff, **9 Python tests**, zero-warning/error .NET Release build, **29 .NET tests**, extension ESLint/TypeScript checking, **27 extension tests** and production extension build (**65 standard automated tests/groups**). Native desktop tests were not rerun for this instructions-only change.
+- The new provider regression checks text/image requests for Gemini and Groq in both Quick and Detailed modes. It verifies the runnable-code instructions reach each real provider adapter and that structured response processing preserves a complete function/call/print fixture. The fixed synthetic Python fixture was executed and printed `olleh`.
+- **Live requests to both configured Groq and Gemini Web accounts** independently generated a complete Python reverse-string program for sample `hello`, using the updated shared instructions and existing provider adapters. Each generated code block passed a restricted AST check and isolated Python execution, called the solution and printed exactly `olleh`. Only this tightly restricted synthetic example was executed; arbitrary provider-generated code is not run by the application. Source, credentials and errors were not logged. The live harness used settings clones and read-only credential access; saved settings remained byte-for-byte unchanged. This establishes the reported case, not correctness for every possible programming problem/language/model.
+- Self-contained production publish and quiet installer passed. Installed helper DLL matched the published DLL and saved preferences remained byte-for-byte unchanged.
+
+Validation/release used the clean index snapshot containing only this change. Existing unrelated numbered-MCQ/provider/test edits were preserved and excluded, including the pre-existing missing `Numbered` test method. Only the runnable-code instruction hunk in `Providers.cs` was staged; unrelated edits in that same file remain uncommitted. The live harness is ignored local test tooling and is not shipped in the product.
+
 ## Follow-up: working code Copy controls and visible feedback, 8 October 2026
 
 Native code controls previously painted their padding with the window transparency key, so mouse clicks in those pixels passed through to the underlying application. Only the small Copy controls now have a faint, non-color-key backing. Copy/checkmark icons, per-block `Copied` feedback for 1.8 seconds and short `Retry` failure feedback were added to the native window and explicit browser-overlay mode. Native clipboard contention retries asynchronously without blocking the hover/protection timer. Code is copied without Markdown fences, preserving indentation, quotes, tabs and line breaks; request replacement/hiding stops pending retries. No provider or capture-exclusion implementation changed.

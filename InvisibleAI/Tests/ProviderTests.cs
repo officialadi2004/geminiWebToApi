@@ -70,6 +70,7 @@ internal static class ProviderTests
         finally { Directory.Delete(directory, true); }
     }
     public static readonly (string Name, Func<Task> Run)[] All = [
+        ("Coding: both providers and text/image modes preserve runnable code and output instructions", CompletePrograms),
         ("Providers: explicit selection switches both directions with isolated credentials", Switching),
         ("Groq: official text and multimodal requests, discovered models", GroqRequests),
         ("Gemini: Web2API cookies and messages, models and image forwarding", GeminiRequests),
@@ -135,6 +136,36 @@ internal static class ProviderTests
         s.Model = "openai/gpt-oss-20b"; await x.Service.AskTextAsync("current information?", s, default);
         using var search = JsonDocument.Parse(x.Http.Body!);
         Check(search.RootElement.GetProperty("tools")[0].GetProperty("type").GetString() == "browser_search" && search.RootElement.GetProperty("tool_choice").GetString() == "auto", "Supported search not automatic.");
+    }
+    private static async Task CompletePrograms()
+    {
+        const string program = "def reverse_string(text):\n    return text[::-1]\n\nif __name__ == \"__main__\":\n    print(reverse_string(\"hello\"))";
+        string fenced = "```python\n" + program + "\n```";
+        foreach (string provider in new[] { Providers.Groq, Providers.Gemini })
+        foreach (ResponseMode mode in new[] { ResponseMode.CONCISE, ResponseMode.DETAILED })
+        foreach (bool image in new[] { false, true })
+        {
+            var x = Create(); x.Http.Answer = x.Worker.Answer = Json(new { kind = "code", content = fenced });
+            var settings = Config(provider, provider == Providers.Groq ? VisionModel : GeminiModel);
+            settings.ResponseMode = mode; settings.ProgrammingLanguage = "Python";
+            const string question = "Write a Python program using a function to reverse a string and show its output.";
+            var result = image ? await x.Service.AskMultimodalAsync(question, [137,80,78,71,13,10,26,10], settings, default) : await x.Service.AskTextAsync(question, settings, default);
+            using var request = JsonDocument.Parse(provider == Providers.Groq ? x.Http.Body! : x.Worker.Request!);
+            string instruction = request.RootElement.GetProperty("messages")[0].GetProperty("content").GetString()!;
+            foreach (string rule in new[] { "complete runnable program", "print(reverse_string(text))", "Quick and Detailed modes", "input/output format exactly", "function-only snippet", "Language: Python" })
+                Check(instruction.Contains(rule), "Provider lost a runnable-program requirement.");
+            Check(result.Text == fenced, "Quick/image processing dropped the helper invocation or printed output.");
+        }
+        // Execute only the fixed synthetic fixture, never arbitrary model-generated code.
+        var start = new System.Diagnostics.ProcessStartInfo(Environment.GetEnvironmentVariable("INVISIBLEAI_GEMINI_PYTHON") ?? "python")
+        { UseShellExecute = false, CreateNoWindow = true, RedirectStandardOutput = true, RedirectStandardError = true };
+        start.ArgumentList.Add("-I"); start.ArgumentList.Add("-c"); start.ArgumentList.Add(program);
+        using var child = System.Diagnostics.Process.Start(start)!;
+        var output = child.StandardOutput.ReadToEndAsync(); var error = child.StandardError.ReadToEndAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try { await child.WaitForExitAsync(timeout.Token); }
+        catch (OperationCanceledException) { child.Kill(true); throw new Exception("Synthetic runnable program timed out."); }
+        Check(child.ExitCode == 0 && (await output).Trim() == "olleh" && (await error).Length == 0, "Reverse-string fixture did not execute and print its result.");
     }
     private static async Task GeminiRequests()
     {
@@ -251,13 +282,13 @@ internal static class ProviderTests
     { public int Reads; public string? Read() { Reads++; return value; } public void Write(string secret) => value = secret; public void Delete() => value = null; }
     private sealed class Worker : IGeminiWorker
     {
-        public int Calls; public int FixtureDelay; public string? Request, Code; public bool Echo, NoVision;
+        public int Calls; public int FixtureDelay; public string? Request, Code, Answer; public bool Echo, NoVision;
         public async Task<JsonDocument> InvokeAsync(object request, AppSettings settings, CancellationToken ct)
-        { ct.ThrowIfCancellationRequested(); Calls++; Request = Json(request); if (FixtureDelay > 0 && !Request.Contains("\"models\"")) await Task.Delay(FixtureDelay, ct); return JsonDocument.Parse(Code is not null ? Json(new { errorCode = Code, raw = Cookie }) : Request.Contains("\"models\"") ? Json(new { models = new[] { new { id = GeminiModel, name = "Account Gemini", supportsImages = !NoVision } } }) : Json(new { content = Echo ? Cookie : FixtureAnswer(JsonDocument.Parse(Request).RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!) })); }
+        { ct.ThrowIfCancellationRequested(); Calls++; Request = Json(request); if (FixtureDelay > 0 && !Request.Contains("\"models\"")) await Task.Delay(FixtureDelay, ct); return JsonDocument.Parse(Code is not null ? Json(new { errorCode = Code, raw = Cookie }) : Request.Contains("\"models\"") ? Json(new { models = new[] { new { id = GeminiModel, name = "Account Gemini", supportsImages = !NoVision } } }) : Json(new { content = Echo ? Cookie : Answer ?? FixtureAnswer(JsonDocument.Parse(Request).RootElement.GetProperty("messages")[1].GetProperty("content").GetString()!) })); }
     }
     private sealed class Transport : HttpMessageHandler
     {
-        public int Calls; public int FixtureDelay; public string? Body, Url, Auth; public bool Wait, Echo;
+        public int Calls; public int FixtureDelay; public string? Body, Url, Auth, Answer; public bool Wait, Echo;
         public HttpStatusCode Status = HttpStatusCode.OK;
         protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
         {
@@ -266,7 +297,7 @@ internal static class ProviderTests
             if (Wait) await Task.Delay(Timeout.Infinite, ct);
             Body = request.Content is null ? null : await request.Content.ReadAsStringAsync(ct);
             if (Body is not null) { Safe(Body); if (FixtureDelay > 0) await Task.Delay(FixtureDelay, ct); }
-            string response = Status != HttpStatusCode.OK ? Key + Cookie : request.Method == HttpMethod.Get ? Json(new { data = new[] { new { id = TextModel, active = true, supports_vision = false }, new { id = VisionModel, active = true, supports_vision = true }, new { id = "openai/gpt-oss-20b", active = true, supports_vision = false } } }) : Json(new { choices = new[] { new { message = new { content = Echo ? Key : FixtureAnswer(UserText(Body!)) }, finish_reason = "stop" } }, usage = new { prompt_tokens = 1, completion_tokens = 2, total_tokens = 3 } });
+            string response = Status != HttpStatusCode.OK ? Key + Cookie : request.Method == HttpMethod.Get ? Json(new { data = new[] { new { id = TextModel, active = true, supports_vision = false }, new { id = VisionModel, active = true, supports_vision = true }, new { id = "openai/gpt-oss-20b", active = true, supports_vision = false } } }) : Json(new { choices = new[] { new { message = new { content = Echo ? Key : Answer ?? FixtureAnswer(UserText(Body!)) }, finish_reason = "stop" } }, usage = new { prompt_tokens = 1, completion_tokens = 2, total_tokens = 3 } });
             return new HttpResponseMessage(Status) { Content = new StringContent(response) };
         }
     }
